@@ -1,0 +1,157 @@
+@import 'tailwindcss';
+
+/* Rajdhani: la tipografía de interfaz de la tienda anterior (navbar, títulos de sección, botones, etiquetas). */
+@font-face {
+  font-family: 'Rajdhani';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/rajdhani-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Rajdhani';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./assets/fonts/rajdhani-latin-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Rajdhani';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./assets/fonts/rajdhani-latin-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Rajdhani';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./assets/fonts/rajdhani-latin-700.woff2') format('woff2');
+}
+
+/* Valores tomados de la tienda anterior (https://54-232-26-69.sslip.io). */
+@theme {
+  --font-display: 'Bebas Neue', Impact, 'Arial Narrow', sans-serif;
+  --font-sans: 'Barlow', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-ui: 'Rajdhani', 'Barlow', system-ui, sans-serif;
+
+  --color-ink-0: #060710;
+  --color-ink: #08090e;
+  --color-ink-2: #0e1017;
+  --color-ink-3: #151821;
+  --color-ink-4: #1c202d;
+  --color-line: rgba(255, 255, 255, 0.12);
+  --color-line-soft: rgba(255, 255, 255, 0.06);
+  --color-bone: #f0ebe3;
+  --color-mute: #b8b0a4;
+  --color-dim: #968e82;
+  --color-ember: #f56a2d;
+  --color-ember-hi: #ff8c55;
+  --color-ember-lo: #c0490f;
+  --color-ember-ink: #1a0d05;
+  --color-moss: #34d399;
+  --color-moss-lo: #1f7a55;
+  --color-amber: #fbbf24;
+  --color-alert: #f87171;
+
+  --container-site: 1400px;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-ink font-sans text-bone antialiased;
+    font-size: 1.0625rem;
+    line-height: 1.55;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-ember-hi);
+    outline-offset: 2px;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-display;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    line-height: 0.95;
+    text-wrap: balance;
+    /* Bebas Neue solo trae peso 400. La anterior lo pedía en 600 y cada navegador lo engrosa distinto
+       (Safari dibuja copias desplazadas). Se apaga el engrosado sintético y se da el mismo grosor con un trazo. */
+    font-synthesis-weight: none;
+    -webkit-text-stroke: 0.03em currentColor;
+  }
+
+  /* Solo el navbar queda fijo arriba (la barra de anuncios se va con el scroll). */
+  [id] {
+    scroll-margin-top: 5rem;
+
+    @media (width >= 64rem) {
+      scroll-margin-top: 6rem;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@keyframes pop {
+  0% {
+    transform: scale(0.6);
+  }
+  70% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Relleno rayado de las fotos que todavía no están (productos sin foto, torneos, categorías).
+   Toma el color de fondo del elemento y le suma franjas diagonales tenues. */
+@utility stripes {
+  background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.025) 0 22px, transparent 22px 44px);
+}
+
+/* Fila con scroll horizontal que arranca alineada al contenedor y se sale por el borde derecho de la pantalla.
+   El elemento ocupa todo el ancho; el relleno lateral replica el margen y el gutter de `container`. */
+@utility bleed-row {
+  --gutter: 1rem;
+  --edge: max(var(--gutter), calc((100% - var(--container-site)) / 2 + var(--gutter)));
+  padding-inline: var(--edge);
+  scroll-padding-inline: var(--edge);
+
+  @media (width >= 40rem) {
+    --gutter: 1.5rem;
+  }
+  @media (width >= 64rem) {
+    --gutter: 2rem;
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}

@@ -1,0 +1,60 @@
+name: Publicar en GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Compilar
+        env:
+          # Settings → Secrets and variables → Actions → Variables. La clave es publicable: igual queda en el JS.
+          VITE_STOREFRONT_BASE_URL: ${{ vars.VITE_STOREFRONT_BASE_URL }}
+          VITE_STOREFRONT_VENUE: ${{ vars.VITE_STOREFRONT_VENUE }}
+          VITE_STOREFRONT_KEY: ${{ vars.VITE_STOREFRONT_KEY }}
+          # Apagado salvo que la variable diga otra cosa: producción todavía no tiene el envío con Andreani.
+          VITE_HOME_DELIVERY: ${{ vars.VITE_HOME_DELIVERY || 'off' }}
+          # /<repo>/ en usuario.github.io/<repo>; con dominio propio, definí BASE_PATH=/ en las variables.
+          BASE_PATH: ${{ vars.BASE_PATH || format('/{0}/', github.event.repository.name) }}
+        run: |
+          for name in VITE_STOREFRONT_BASE_URL VITE_STOREFRONT_VENUE VITE_STOREFRONT_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Falta la variable $name en Settings → Secrets and variables → Actions → Variables"
+              exit 1
+            fi
+          done
+          npm run build -- --base="$BASE_PATH"
+          # GitHub Pages no tiene reescrituras: una ruta como /pedido cae en 404.html, que es la tienda.
+          cp dist/index.html dist/404.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
