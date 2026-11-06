@@ -24,12 +24,6 @@ export const store = {
     Accesorios: 'accesorios',
     'Libros y codex': 'libros',
   } as Record<string, string>,
-  // Las fotos con licencia CC BY piden nombrar al autor (ver public/img/categorias/CREDITOS.md).
-  categoryPhotoCredits: [
-    { author: 'Jo Naylor', url: 'https://www.flickr.com/photos/11598937@N08/9355579552' },
-    { author: 'malias', url: 'https://www.flickr.com/photos/62752875@N00/154162207' },
-    { author: 'guldfisken', url: 'https://www.flickr.com/photos/92269864@N00/398144161' },
-  ],
   featuredCodes: [] as string[],
   featuredCount: 12,
 };

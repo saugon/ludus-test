@@ -369,18 +369,6 @@ function Categories() {
           );
         })}
       </Carousel>
-      <p className={`${container} mt-4 font-ui text-xs text-dim`}>
-        Fotos de categorías:{' '}
-        {store.categoryPhotoCredits.map((credit, index) => (
-          <span key={credit.author}>
-            {index > 0 && (index === store.categoryPhotoCredits.length - 1 ? ' y ' : ', ')}
-            <a href={credit.url} target="_blank" rel="noopener noreferrer" className="underline-offset-2 hover:text-bone hover:underline">
-              {credit.author}
-            </a>
-          </span>
-        ))}{' '}
-        (CC BY).
-      </p>
     </section>
   );
 }

@@ -57,7 +57,6 @@ describe('the home', () => {
     const photo = (name: string) => row.getByRole('link', { name: new RegExp(`^${name}`) }).querySelector('img')?.getAttribute('src');
     expect(photo('Miniaturas')).toBe('/img/categorias/miniaturas-400.webp');
     expect(photo('Libros y codex')).toBe('/img/categorias/libros-400.webp');
-    expect(screen.getByText(/Fotos de categorías/)).toHaveTextContent('Fotos de categorías: Jo Naylor, malias y guldfisken (CC BY).');
   });
 
   it('has the play, about and contact sections the navbar links to', async () => {
