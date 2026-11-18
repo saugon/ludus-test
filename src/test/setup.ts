@@ -1,3 +1,5 @@
+// Primero: tiene que correr antes de que cargue react-dom.
+import './polyfills';
 import '@testing-library/jest-dom/vitest';
 import { cleanup, configure } from '@testing-library/react';
 import { afterEach } from 'vitest';

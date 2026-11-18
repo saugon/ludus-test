@@ -147,6 +147,27 @@ describe('CartProvider', () => {
     expect(result.current.shortages.size).toBe(0);
   });
 
+  it('marks lines loaded with more units than their maximum, and fixes them down to it', async () => {
+    const { result, storefront } = setup(
+      fakeStorefront({
+        getCart: async () =>
+          cart([
+            { code: 'A', quantity: 4, max: 2 },
+            { code: 'B', quantity: 1, max: 5 },
+          ]),
+      }),
+    );
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    expect([...result.current.shortages]).toEqual([['A', 2]]);
+
+    await act(() => result.current.fixShortages());
+    expect(storefront.setCartLines).toHaveBeenLastCalledWith([
+      { code: 'A', quantity: 2 },
+      { code: 'B', quantity: 1 },
+    ]);
+  });
+
   it('forgets a closed cart so the next add creates a new one', async () => {
     localStorage.setItem(cartStorageKey(VENUE), 'cart-closed');
     const { result } = setup(fakeStorefront({ getCart: async () => cart([{ code: 'A', quantity: 1 }], 'cart-closed') }));

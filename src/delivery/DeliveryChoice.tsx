@@ -16,6 +16,7 @@ import {
   linesDigest,
   shortAddress,
   toDeliveryAddress,
+  carrierName,
   unavailableReason,
   validateAddress,
   validateContact,
@@ -193,8 +194,6 @@ const choiceCard =
   'flex cursor-pointer items-start gap-3 rounded-lg border border-line bg-ink-2 px-4 py-3.5 transition-colors hover:border-mute has-[:checked]:border-ember has-[:checked]:bg-ember/5 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ember';
 const secondaryButton = 'h-11 rounded-md border border-line px-4 font-semibold hover:border-mute';
 
-const CARRIER_NAMES: Record<NonNullable<DeliveryOption['carrier']>, string> = { andreani: 'Andreani' };
-
 type TextField = 'street' | 'number' | 'floor' | 'apartment' | 'postal_code' | 'city';
 
 export function DeliveryChoice({ delivery, disabled }: { delivery: Delivery; disabled: boolean }) {
@@ -249,7 +248,7 @@ export function DeliveryChoice({ delivery, disabled }: { delivery: Delivery; dis
   }
 
   const provinceError = delivery.addressTouched.province ? delivery.addressErrors.province : undefined;
-  const carrierName = chosen?.carrier ? CARRIER_NAMES[chosen.carrier] : 'El transporte';
+  const carrier = chosen?.carrier ? carrierName(chosen.carrier) : 'El transporte';
 
   return (
     <fieldset disabled={disabled} className="space-y-4">
@@ -269,7 +268,7 @@ export function DeliveryChoice({ delivery, disabled }: { delivery: Delivery; dis
             <input type="radio" name="metodo" value="carrier" checked={method === 'carrier'} onChange={() => delivery.setMethod('carrier')} className="mt-1 size-4 shrink-0 accent-ember" />
             <span className="min-w-0 flex-1">
               <span className="block font-semibold">Envío a domicilio</span>
-              <span className="block text-sm text-mute">Por Andreani, a todo el país</span>
+              <span className="block text-sm text-mute">A todo el país</span>
             </span>
             {chosen && <span className="font-semibold tabular-nums">{money(chosen.price, chosen.currency)}</span>}
           </label>
@@ -402,7 +401,7 @@ export function DeliveryChoice({ delivery, disabled }: { delivery: Delivery; dis
                 )}
                 {quote.unavailable.map((entry) => (
                   <p key={entry.carrier} className="rounded-lg border border-line p-3 text-sm text-mute">
-                    {unavailableReason(entry)}
+                    {unavailableReason(entry, delivery.carrierOptions.length > 0)}
                   </p>
                 ))}
                 {delivery.carrierOptions.length === 0 && (
@@ -420,7 +419,7 @@ export function DeliveryChoice({ delivery, disabled }: { delivery: Delivery; dis
                 <h3 id={`${ids.phone}-titulo`} className={sectionTitle}>
                   3 · Contacto para la entrega
                 </h3>
-                <p className="mt-1 text-sm text-mute">{carrierName} los usa para avisarte y entregar el paquete.</p>
+                <p className="mt-1 text-sm text-mute">{carrier} los usa para avisarte y entregar el paquete.</p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 {(

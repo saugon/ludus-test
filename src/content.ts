@@ -10,7 +10,7 @@ export const store = {
     { days: 'Sábados y domingos', time: '13 a 21 h' },
     { days: 'Lunes', time: 'Cerrado' },
   ],
-  tables: 17,
+  tables: 18,
   tournaments:
     'Organizamos torneos y ligas de Warhammer 40.000, Age of Sigmar y Kill Team. Las fechas las publicamos en Instagram.',
   // Orden de las categorías en el catálogo y en la home. Las que no están en la lista van al final, en orden alfabético.
@@ -38,6 +38,7 @@ export const messages = {
   order: 'Hola Ludus, quiero hacer un encargo: ',
   table: 'Hola Ludus, quiero reservar una mesa para jugar. Día y horario: ',
   product: (name: string) => `Hola Ludus, quiero encargar "${name}". ¿Me pasan precio y demora?`,
-  saleIssue: (sale: number | null) =>
-    sale ? `Hola Ludus, tengo una consulta por el pedido #${sale}.` : 'Hola Ludus, tengo una consulta por un pago.',
+  transferReceipt: (total: string) => `Hola Ludus, les mando el comprobante de la transferencia de ${total} por mi pedido.`,
+  saleIssue: (order: number | null) =>
+    order ? `Hola Ludus, tengo una consulta por el pedido #${order}.` : 'Hola Ludus, tengo una consulta por un pago.',
 };

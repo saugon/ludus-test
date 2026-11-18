@@ -2,16 +2,26 @@ import type { Product } from '@vertex/storefront-sdk';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { messages, whatsappUrl } from '../content';
-import { money } from '../lib/format';
+import { money, shortDate } from '../lib/format';
+import { asset } from '../lib/paths';
 import { AddToCart } from './AddToCart';
 
 // Tarjetas de producto (home y catálogo): la foto ocupa toda la tarjeta, con la categoría arriba y el nombre, el precio
-// y la acción sobre un degradado abajo. Sin foto, queda el rayado del color de la tarjeta. Son `@container`: en
+// y la acción sobre un degradado abajo. Sin foto, el logo apagado como en la ficha. Son `@container`: en
 // columnas angostas (el catálogo en mobile) el botón baja debajo del precio.
 
 function Photo({ src, tone }: { src: string | null; tone: 'ink' | 'moss' }) {
   const [broken, setBroken] = useState(false);
-  if (!src || broken) return <div aria-hidden="true" className={`stripes absolute inset-0 -z-10 ${tone === 'moss' ? 'bg-[#10221b]' : 'bg-ink-3'}`} />;
+  if (!src || broken) {
+    // El mismo placeholder que la ficha: el logo apagado, centrado en la parte de arriba, sobre el degradado del texto.
+    return (
+      <div aria-hidden="true" className={`absolute inset-0 -z-10 ${tone === 'moss' ? 'bg-[#10221b]' : 'bg-ink-3'}`}>
+        <div className="flex h-1/2 items-center justify-center pt-4">
+          <img src={asset('/logo.svg')} alt="" className="w-1/3 opacity-25 grayscale @max-[12rem]:w-1/4" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <img
@@ -43,6 +53,20 @@ function Shade() {
 // ::after tome la tarjeta entera, ningún contenedor intermedio puede ser `relative`: la foto y el degradado van en -z-10.
 const stretched = 'after:absolute after:inset-0 after:z-0 focus-visible:outline-none focus-visible:after:rounded-xl focus-visible:after:outline-2 focus-visible:after:outline-ember-hi';
 
+const tag = 'shrink-0 rounded-full bg-ink-0/80 px-2 py-0.5 font-ui text-[0.65rem] font-bold uppercase tracking-[0.08em] sm:text-[0.7rem]';
+
+/** «Preventa», con la fecha estimada cuando la hay, sobre el nombre: abajo, lejos de la categoría. A lectores de pantalla les llega la frase completa. */
+function PresaleTag({ product }: { product: Product }) {
+  const short = product.presale_available_on ? shortDate(product.presale_available_on) : null;
+  const long = product.presale_available_on ? shortDate(product.presale_available_on, { long: true }) : null;
+  return (
+    <p className="mb-1 truncate font-ui text-[0.7rem] font-bold uppercase tracking-[0.12em] text-ember-hi [text-shadow:0_1px_8px_rgba(0,0,0,0.5)] sm:text-xs">
+      <span aria-hidden="true">Preventa{short && ` · ${short}`}</span>
+      <span className="sr-only">{long ? `Preventa, llegada estimada el ${long}` : 'Preventa'}</span>
+    </p>
+  );
+}
+
 export function ShowcaseProductCard({ product, className = '' }: { product: Product; className?: string }) {
   const title = product.name ?? product.code;
 
@@ -50,9 +74,11 @@ export function ShowcaseProductCard({ product, className = '' }: { product: Prod
     <article className={`${shell} aspect-[4/5] bg-ink-3 hover:border-ember/30 ${className}`}>
       <Photo src={product.image_url} tone="ink" />
       <Shade />
-      <p className={eyebrow}>{product.category ?? ' '}</p>
-      <div className={`flex items-end justify-between gap-3 ${narrow}`}>
+      <p className={eyebrow}>{product.subcategory ?? product.category ?? ' '}</p>
+      {/* Con el «+» redondo la acción entra al lado del precio incluso en columnas angostas. */}
+      <div className="flex items-end justify-between gap-3">
         <div className="min-w-0">
+          {product.presale && <PresaleTag product={product} />}
           <h3 className={name}>
             <Link to={`/productos/${encodeURIComponent(product.code)}`} className={stretched}>
               {title}
@@ -75,14 +101,11 @@ export function ShowcaseEncargoCard({ product, className = '', tagged = false }:
       <Photo src={product.image_url} tone="moss" />
       <Shade />
       <div className="flex items-start justify-between gap-2">
-        <p className={eyebrow}>{product.category ?? ' '}</p>
-        {tagged && (
-          <span className="shrink-0 rounded-full bg-ink-0/80 px-2 py-0.5 font-ui text-[0.65rem] font-bold uppercase tracking-[0.08em] text-moss sm:text-[0.7rem]">
-            Por encargo
-          </span>
-        )}
+        <p className={eyebrow}>{product.subcategory ?? product.category ?? ' '}</p>
+        {tagged && <span className={`${tag} text-moss`}>Por encargo</span>}
       </div>
       <div>
+        {product.presale && <PresaleTag product={product} />}
         <h3 className={name}>
           <Link to={`/productos/${encodeURIComponent(product.code)}`} className={stretched}>
             {title}

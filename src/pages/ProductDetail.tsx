@@ -11,7 +11,7 @@ import { QuantityStepper } from '../components/QuantityStepper';
 import { button, container } from '../components/ui';
 import { messages, store, whatsappUrl } from '../content';
 import { isNotFound } from '../lib/errors';
-import { money } from '../lib/format';
+import { money, shortDate } from '../lib/format';
 import { isOrderable, useProducts, useStorefront } from '../lib/storefront';
 import { useTitle } from '../lib/useTitle';
 
@@ -116,6 +116,8 @@ function ProductView({ product }: { product: Product }) {
           </p>
         </div>
 
+        {product.presale && <PresaleNotice availableOn={product.presale_available_on} />}
+
         {orderable ? (
           <>
             <p className="flex items-center gap-2 text-bone/90">
@@ -166,5 +168,15 @@ function ProductView({ product }: { product: Product }) {
         )}
       </div>
     </article>
+  );
+}
+
+function PresaleNotice({ availableOn }: { availableOn: string | null }) {
+  const date = availableOn ? shortDate(availableOn, { long: true }) : null;
+  return (
+    <div className="rounded-lg border border-ember/40 bg-ember/10 p-4">
+      <p className="font-ui text-sm font-bold uppercase tracking-[0.08em] text-ember-hi">Preventa</p>
+      <p className="mt-1 text-bone/90">{date ? `Llegada estimada: ${date}.` : 'Todavía no tenemos fecha estimada de llegada.'}</p>
+    </div>
   );
 }

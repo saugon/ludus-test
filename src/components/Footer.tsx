@@ -11,7 +11,7 @@ const columnText = 'font-ui font-medium text-ember-ink/75';
 export function Footer() {
   return (
     <footer className="bg-ember text-ember-ink">
-      <div className={`${container} grid gap-10 pb-10 pt-12 sm:grid-cols-2 sm:pt-16 lg:grid-cols-[minmax(0,5fr)_repeat(3,minmax(0,2.4fr))]`}>
+      <div className={`${container} grid gap-10 pb-10 pt-12 sm:grid-cols-2 sm:pt-16 lg:grid-cols-[minmax(0,5fr)_repeat(2,minmax(0,2.4fr))]`}>
         <div className="space-y-4">
           <p className="font-display text-5xl leading-none tracking-[0.01em] [-webkit-text-stroke:0.03em_currentColor] sm:text-6xl">{store.address}</p>
           <p className={`max-w-sm ${columnText}`}>Wargames, miniaturas y hobby. Una tienda y un lugar para jugar en {store.address}.</p>
@@ -58,10 +58,6 @@ export function Footer() {
               </div>
             ))}
           </dl>
-        </div>
-        <div>
-          <h2 className={columnTitle}>Cómo comprar</h2>
-          <p className={columnText}>Pagás online y retirás en el local.</p>
         </div>
       </div>
       <div className={`${container} pb-8`}>

@@ -1,9 +1,10 @@
 import type { Checkout } from '@vertex/storefront-sdk';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useCart } from '../cart/CartProvider';
 import { useCheckout } from '../checkout/CheckoutProvider';
 import { ErrorNotice } from '../components/ErrorNotice';
+import { FollowOrder, rememberOrderBuyer } from '../components/FollowOrder';
 import { formatAddress } from '../delivery/address';
 import { withDelivery } from '../delivery/compat';
 import { AlertIcon, CheckIcon, ClockIcon, PinIcon, WhatsAppIcon } from '../components/Icons';
@@ -13,21 +14,24 @@ import { money } from '../lib/format';
 import { useStorefront } from '../lib/storefront';
 import { useTitle } from '../lib/useTitle';
 import { useShopper } from '../shopper/ShopperProvider';
-import { ACCOUNT_PATH, signInPath } from '../shopper/returnPath';
+import { ACCOUNT_PATH } from '../shopper/returnPath';
+import { holdDeadline, orderNumber } from '../shopper/orderStatus';
+import { TransferDetails } from '../payment/TransferDetails';
+import { awaitsOfflinePayment, DISCOUNT_LABELS, paymentMethodOf, paysOffline, percentText } from '../payment/methods';
 
 type State =
   | { status: 'checking' }
   | { status: 'done'; checkout: Checkout | null }
   | { status: 'error'; error: unknown };
 
-function Pickup() {
+function Pickup({ note = 'Traé tu número de pedido.' }: { note?: string }) {
   return (
-    <div className="rounded-lg border border-line bg-ink-2 p-5 text-left">
+    <div className="rounded-lg border border-line bg-ink-2 p-5 text-left sm:p-6">
       <p className="flex items-start gap-2 font-semibold">
         <PinIcon size={20} className="mt-0.5 shrink-0 text-ember" />
         Retirá tu pedido en {store.address}
       </p>
-      <p className="mt-2 text-mute">Traé tu número de pedido.</p>
+      <p className="mt-2 text-mute">{note}</p>
       <ul className="mt-3 space-y-1 text-sm text-mute">
         {store.hours.map((slot) => (
           <li key={slot.days} className="flex items-start gap-2">
@@ -78,6 +82,89 @@ function HomeDelivery({ delivery, currency }: { delivery: Checkout['delivery']; 
   );
 }
 
+// Transferencia o efectivo: el pedido está reservado hasta que el local confirme el pago.
+function OfflinePending({ checkout, signedIn, follow, onCheck }: { checkout: Checkout; signedIn: boolean; follow: ReactNode; onCheck: () => void }) {
+  const transfer = paymentMethodOf(checkout) === 'transfer' ? checkout.transfer : null;
+  const deadline = holdDeadline(checkout.expires_at);
+  const total = money(checkout.total, checkout.currency);
+
+  return (
+    <div className="space-y-8">
+      <h1 className="flex items-center justify-center gap-4 text-center text-5xl sm:text-6xl">
+        <span className="hidden size-14 shrink-0 items-center justify-center rounded-full bg-ink-3 text-ember sm:flex" aria-hidden="true">
+          <ClockIcon size={26} />
+        </span>
+        Tu pedido está reservado
+      </h1>
+
+      {/* El plazo es lo más importante de la página: si se pasa, se pierde la reserva. */}
+      <div role="note" aria-label="Plazo de la reserva" className="rounded-lg border border-ember/50 bg-ember/10 px-5 py-5 text-center sm:px-8 sm:py-6">
+        <p className="leading-relaxed text-bone sm:text-lg">
+          {deadline ? (
+            <>
+              Tenés tiempo hasta <strong className="whitespace-nowrap font-semibold text-white">{deadline}</strong>{' '}
+            </>
+          ) : (
+            'Tenés unas horas '
+          )}
+          {transfer ? (
+            <>
+              para transferirnos <strong className="whitespace-nowrap font-semibold text-white tabular-nums">{total}</strong>.
+            </>
+          ) : (
+            <>
+              para pasar a retirarlo y pagar <strong className="whitespace-nowrap font-semibold text-white tabular-nums">{total}</strong> en efectivo.
+            </>
+          )}
+        </p>
+        <p className="mt-2 font-semibold text-ember-hi">
+          {transfer ? 'Si no nos llega para entonces, se pierde tu reserva.' : 'Si no pasás para entonces, se pierde tu reserva.'}
+        </p>
+        {checkout.discount_code && (
+          <p className="mt-2 text-sm text-moss">
+            Ya tiene el código {checkout.discount_code.code}: te ahorrás <span className="tabular-nums">{money(checkout.discount_code.amount, checkout.currency)}</span>.
+          </p>
+        )}
+        {checkout.discount && (
+          <p className="mt-2 text-sm text-moss">
+            Ya tiene el {percentText(checkout.discount.percent)} de descuento por pagar con {DISCOUNT_LABELS[paymentMethodOf(checkout)]}: te ahorrás{' '}
+            <span className="tabular-nums">{money(checkout.discount.amount, checkout.currency)}</span>.
+          </p>
+        )}
+      </div>
+
+      {/* Con transferencia, en la compu: la cuenta a la izquierda y la entrega y los botones a la derecha, para verlo todo sin scrollear. */}
+      <div className={transfer ? 'grid items-start gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] lg:gap-8' : 'space-y-6'}>
+        {transfer && (
+          <TransferDetails transfer={transfer} total={checkout.total} currency={checkout.currency}>
+            <p className="mt-3 text-sm text-mute">Cuando confirmemos la transferencia, el pedido pasa a preparación.</p>
+          </TransferDetails>
+        )}
+
+        <div className="space-y-6">
+          {checkout.delivery.kind === 'carrier' ? (
+            <HomeDelivery delivery={checkout.delivery} currency={checkout.currency} />
+          ) : (
+            <Pickup note={transfer ? 'Podés retirarlo cuando confirmemos la transferencia.' : `Pagás ${total} en efectivo cuando lo retirás.`} />
+          )}
+
+          <div className={`flex flex-col gap-3 sm:flex-row ${transfer ? '' : 'justify-center'}`}>
+            <button type="button" onClick={onCheck} className={button.primary}>
+              {transfer ? 'Ya transferí, ver el estado' : 'Ver el estado del pedido'}
+            </button>
+            {signedIn && (
+              <Link to={ACCOUNT_PATH} className={button.secondary}>
+                Ver mis pedidos
+              </Link>
+            )}
+          </div>
+          {follow}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Order() {
   const storefront = useStorefront();
   const { reload } = useCart();
@@ -85,7 +172,9 @@ export function Order() {
   const signedIn = session.status === 'member' || session.status === 'error';
   const [state, setState] = useState<State>({ status: 'checking' });
   const started = useRef(false);
-  const { restoreDelivery, clear } = useCheckout();
+  const { restoreDelivery, clear, buyer: draft } = useCheckout();
+  // Se toma al llegar, antes de que el checkout borre sus datos: con este email se ofrece entrar a Mis pedidos.
+  const [buyer] = useState(() => rememberOrderBuyer(draft));
 
   const check = useCallback(async () => {
     setState({ status: 'checking' });
@@ -108,23 +197,30 @@ export function Order() {
 
   useEffect(() => {
     if (!checkout) return;
-    // Pagado: lo que se guardó para esta compra ya no hace falta.
-    if (checkout.status === 'paid') clear();
+    // Pagado, o reservado por transferencia o efectivo: la compra está hecha y lo que se guardó para ella ya no hace falta.
+    if (checkout.status === 'paid' || awaitsOfflinePayment(checkout)) clear();
     // No se pagó: al reintentar, el paso Envío arranca con la misma dirección y la vuelve a cotizar.
     if (checkout.status === 'failed' && checkout.delivery.kind === 'carrier' && checkout.delivery.address) restoreDelivery(checkout.delivery.address);
     // Sólo cuando llega la respuesta: clear y restoreDelivery cambian en cada render del provider.
   }, [checkout]);
+  const offline = checkout != null && paysOffline(checkout);
+  // El pedido por transferencia trae la cuenta: va en dos columnas, más ancho.
+  const wide = checkout != null && awaitsOfflinePayment(checkout) && paymentMethodOf(checkout) === 'transfer';
   useTitle(
     checkout?.status === 'paid'
       ? 'Pedido confirmado'
       : checkout?.status === 'failed'
-        ? 'El pago no se completó'
-        : 'Estado de tu pedido',
+        ? offline
+          ? 'El pedido se canceló'
+          : 'El pago no se completó'
+        : checkout && awaitsOfflinePayment(checkout)
+          ? 'Pedido reservado'
+          : 'Estado de tu pedido',
   );
 
   return (
     <div className={`${container} py-14 sm:py-20`}>
-      <div className="mx-auto max-w-2xl">
+      <div className={`mx-auto ${wide ? 'max-w-5xl' : 'max-w-2xl'}`}>
       {state.status === 'checking' && (
         <div role="status" className="space-y-4 text-center">
           <span className="mx-auto block size-12 animate-spin rounded-full border-4 border-line border-t-ember" aria-hidden="true" />
@@ -156,9 +252,9 @@ export function Order() {
             <CheckIcon size={32} />
           </span>
           <h1 className="text-6xl">¡Gracias por tu compra!</h1>
-          {checkout.sale_number != null && (
+          {orderNumber(checkout) != null && (
             <p className="text-xl">
-              Tu número de pedido es <strong className="font-display text-4xl tracking-wide text-ember-hi">#{checkout.sale_number}</strong>
+              Tu número de pedido es <strong className="font-display text-4xl tracking-wide text-ember-hi">#{orderNumber(checkout)}</strong>
             </p>
           )}
           <p className="text-mute">
@@ -167,6 +263,7 @@ export function Order() {
             email.
           </p>
           {checkout.delivery.kind === 'carrier' ? <HomeDelivery delivery={checkout.delivery} currency={checkout.currency} /> : <Pickup />}
+          {session.status === 'guest' && <FollowOrder buyer={buyer} what={checkout.delivery.kind === 'carrier' ? 'envío' : 'retiro'} />}
           <div className="flex flex-col justify-center gap-3 sm:flex-row">
             {signedIn && (
               <Link to={ACCOUNT_PATH} className={button.primary}>
@@ -177,15 +274,6 @@ export function Order() {
               Seguir comprando
             </Link>
           </div>
-          {session.status === 'guest' && (
-            <p className="text-mute">
-              ¿Querés seguir el estado del {checkout.delivery.kind === 'carrier' ? 'envío' : 'retiro'}?{' '}
-              <Link to={signInPath(ACCOUNT_PATH)} className="font-semibold text-bone underline underline-offset-4 hover:text-ember-hi">
-                Ingresá con el email de la compra
-              </Link>
-              .
-            </p>
-          )}
         </div>
       )}
 
@@ -194,15 +282,31 @@ export function Order() {
           <span className="mx-auto flex size-16 items-center justify-center rounded-full bg-alert/15 text-alert">
             <AlertIcon size={30} />
           </span>
-          <h1 className="text-6xl">El pago no se completó</h1>
+          <h1 className="text-6xl">{offline ? 'El pedido se canceló' : 'El pago no se completó'}</h1>
           <p className="text-lg text-mute">
-            El pago fue rechazado o venció antes de terminarlo. No se te cobró nada y tu carrito sigue guardado.
+            {paymentMethodOf(checkout) === 'transfer'
+              ? 'No recibimos la transferencia a tiempo o el local no pudo confirmarla, y se liberó la reserva.'
+              : paymentMethodOf(checkout) === 'cash'
+                ? 'Venció la reserva sin que lo retires, o el local lo canceló, y se liberó el stock.'
+                : 'El pago fue rechazado o venció antes de terminarlo. No se te cobró nada y tu carrito sigue guardado.'}
           </p>
+          {paymentMethodOf(checkout) === 'transfer' && (
+            <p className="text-mute">
+              ¿Ya habías transferido?{' '}
+              <a href={whatsappUrl(messages.general)} target="_blank" rel="noopener noreferrer" className="font-semibold text-bone underline underline-offset-4 hover:text-ember-hi">
+                Escribinos por WhatsApp
+              </a>{' '}
+              y lo resolvemos.
+            </p>
+          )}
+          {/* Con transferencia o efectivo el carrito ya se soltó al reservar: no hay a qué volver, se arma de nuevo. */}
           <div className="flex flex-col justify-center gap-3 sm:flex-row">
-            <Link to="/checkout" className={button.primary}>
-              Volver a intentar
-            </Link>
-            <Link to="/productos" className={button.secondary}>
+            {!offline && (
+              <Link to="/checkout" className={button.primary}>
+                Volver a intentar
+              </Link>
+            )}
+            <Link to="/productos" className={offline ? button.primary : button.secondary}>
               Seguir comprando
             </Link>
           </div>
@@ -219,13 +323,20 @@ export function Order() {
             Hubo un problema al confirmar el pago y lo está revisando el local. Te vamos a contactar por email para resolverlo.
             No vuelvas a pagar mientras tanto.
           </p>
-          <a href={whatsappUrl(messages.saleIssue(checkout.sale_number))} target="_blank" rel="noopener noreferrer" className={button.order}>
+          <a href={whatsappUrl(messages.saleIssue(orderNumber(checkout)))} target="_blank" rel="noopener noreferrer" className={button.order}>
             <WhatsAppIcon /> Escribinos por WhatsApp
           </a>
         </div>
       )}
 
-      {checkout && !['paid', 'failed', 'attention'].includes(checkout.status) && (
+      {checkout && awaitsOfflinePayment(checkout) && <OfflinePending
+          checkout={checkout}
+          signedIn={signedIn}
+          follow={session.status === 'guest' && <FollowOrder buyer={buyer} what={checkout.delivery.kind === 'carrier' ? 'envío' : 'retiro'} />}
+          onCheck={() => void check()}
+        />}
+
+      {checkout && !['paid', 'failed', 'attention'].includes(checkout.status) && !awaitsOfflinePayment(checkout) && (
         <div className="space-y-6 text-center">
           <h1 className="text-5xl">Todavía no tenemos respuesta</h1>
           <p className="text-lg text-mute">

@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { useCart } from '../cart/CartProvider';
 import { messages, whatsappUrl } from '../content';
-import { AnnouncementBar } from './AnnouncementBar';
 import { CartDrawer } from './CartDrawer';
 import { Footer } from './Footer';
 import { Header } from './Header';
@@ -29,15 +28,13 @@ export function Layout() {
   const { drawerOpen } = useCart();
   const { pathname } = useLocation();
   const fab = !drawerOpen && !/^\/(productos\/.+|checkout(\/.*)?|pedido|ingresar)$/.test(pathname);
-  // En los pasos de la compra y en la cuenta el contenido ocupa al menos la pantalla, así el footer no asoma debajo.
-  // Se resta un poco menos de lo que miden la barra de anuncios y el header (92, 96 y 104 px).
-  const fullHeight = /^\/(checkout|cuenta)(\/|$)/.test(pathname) ? 'min-h-[calc(100dvh-5.75rem)] md:min-h-[calc(100dvh-5.95rem)] lg:min-h-[calc(100dvh-6.45rem)]' : '';
+  // En todas las páginas el contenido ocupa al menos la pantalla, así el footer no asoma debajo y sólo aparece al scrollear.
+  // Se resta un poco menos de lo que mide el header (64 y 72 px).
+  const fullHeight = 'min-h-[calc(100dvh-3.9rem)] lg:min-h-[calc(100dvh-4.4rem)]';
 
   return (
     <div className="flex min-h-dvh flex-col">
       <ScrollManager />
-      {/* La barra de anuncios se va con el scroll; el navbar queda fijo arriba. */}
-      <AnnouncementBar />
       <Header />
       <main id="contenido" className={`flex-1 ${fullHeight}`}>
         <Outlet />

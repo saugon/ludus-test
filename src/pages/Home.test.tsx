@@ -10,7 +10,7 @@ const catalog = [
 ];
 
 function home() {
-  return renderStore(fakeStorefront({ listProducts: async () => catalog }), '/');
+  return renderStore(fakeStorefront({ products: catalog }), '/');
 }
 
 describe('the home', () => {
@@ -23,7 +23,7 @@ describe('the home', () => {
     const alicates = cards[0];
     expect(alicates).toHaveTextContent('Herramientas');
     expect(within(alicates).getByText('$ 15.650')).toBeInTheDocument();
-    expect(within(alicates).getByRole('button', { name: 'Agregar' })).toBeInTheDocument();
+    expect(within(alicates).getByRole('button', { name: /^Agregar .+ al carrito$/ })).toBeInTheDocument();
     expect(within(alicates).getByRole('link', { name: 'Alicates de corte' })).toHaveAttribute('href', '/productos/ALI');
     // El link se estira a toda la tarjeta: ningún contenedor entre la tarjeta y el link puede ser `relative`.
     for (let node = within(alicates).getByRole('link', { name: 'Alicates de corte' }).parentElement; node && node !== alicates; node = node.parentElement) {
@@ -40,7 +40,7 @@ describe('the home', () => {
     expect(consult.getAttribute('href')).toMatch(/^https:\/\/wa\.me\/.+Battletome/);
     const card = consult.closest('article')!;
     expect(card).toHaveTextContent('Precio de referencia');
-    expect(within(card).queryByRole('button', { name: 'Agregar' })).not.toBeInTheDocument();
+    expect(within(card).queryByRole('button', { name: /^Agregar .+ al carrito$/ })).not.toBeInTheDocument();
     expect(encargos.getByRole('link', { name: /Pedir algo que no está en la lista/ })).toBeInTheDocument();
   });
 
@@ -59,6 +59,30 @@ describe('the home', () => {
     expect(photo('Libros y codex')).toBe('/img/categorias/libros-400.webp');
   });
 
+  it("lists the store's main categories from the API, not from the loaded products", async () => {
+    const listCategories = async () => [
+      { name: 'Pinturas', product_count: 4, subcategories: [] },
+      { name: 'Miniaturas', product_count: 9, subcategories: [{ name: 'Orks', product_count: 3 }] },
+    ];
+    renderStore(fakeStorefront({ products: catalog, listCategories }), '/');
+
+    const row = within(await screen.findByRole('region', { name: 'Categorías' }));
+    expect(await row.findByRole('link', { name: /^Pinturas/ })).toHaveAttribute('href', '/productos?categoria=Pinturas');
+    // En el orden de la tienda, y sin las subcategorías.
+    expect(row.getAllByRole('link').map((link) => link.textContent?.replace(/Ver productos.*/, ''))).toEqual(['Miniaturas', 'Pinturas']);
+  });
+
+  it('shows the subcategory on a card, or the main category when it has none', async () => {
+    renderStore(fakeStorefront({ products: [product({ code: 'ORK', name: 'Boyz', category: 'Miniaturas', subcategory: 'Orks' }), ...catalog.slice(0, 1)] }), '/');
+
+    const featured = within(await screen.findByRole('region', { name: 'Productos destacados' }));
+    const card = (name: string) => featured.getByRole('link', { name }).closest('article')!;
+    expect(await featured.findByRole('link', { name: 'Boyz' })).toBeInTheDocument();
+    expect(card('Boyz')).toHaveTextContent('Orks');
+    expect(card('Boyz')).not.toHaveTextContent('Miniaturas');
+    expect(card('Alicates de corte')).toHaveTextContent('Herramientas');
+  });
+
   it('has the play, about and contact sections the navbar links to', async () => {
     home();
 
@@ -74,6 +98,41 @@ describe('the home', () => {
     expect(contact.getByText('Martes a viernes')).toBeInTheDocument();
   });
 
+  it('rotates the hero between wargames, card games and role-playing when its progress bar fills, with controls to move and pause', () => {
+    home();
+    const hero = within(screen.getByRole('region', { name: 'Lo que vas a encontrar en Ludus' }));
+    // Solo la diapositiva activa es visible para lectores de pantalla y para el teclado.
+    const visibleTitle = () =>
+      hero
+        .getAllByRole('heading', { level: 2 })
+        .filter((heading) => !heading.closest('[inert]'))
+        .map((heading) => heading.textContent);
+    expect(visibleTitle()).toEqual(['Armá tu ejército.']);
+
+    // La barra de progreso de la diapositiva activa marca el ritmo: al llenarse, pasa a la siguiente.
+    fireEvent.animationEnd(hero.getByTestId('hero-progress'));
+    expect(visibleTitle()).toEqual(['Barajá y repartí.']);
+
+    fireEvent.click(hero.getByRole('button', { name: 'Diapositiva siguiente' }));
+    expect(visibleTitle()).toEqual(['Tirá iniciativa.']);
+    expect(hero.getByRole('link', { name: /Reservá tu mesa/ })).toHaveAttribute('href', expect.stringMatching(/^https:\/\/wa\.me\/.+mesa/));
+
+    fireEvent.click(hero.getByRole('button', { name: 'Diapositiva siguiente' }));
+    expect(visibleTitle()).toEqual(['Armá tu ejército.']);
+    fireEvent.click(hero.getByRole('button', { name: 'Ir a Rol' }));
+    expect(hero.getByRole('button', { name: 'Ir a Rol' })).toHaveAttribute('aria-current', 'true');
+
+    // El mouse sobre el hero y el foco no la frenan. (El freno con el cursor sobre un botón es solo CSS, sin probar acá.)
+    const region = screen.getByRole('region', { name: 'Lo que vas a encontrar en Ludus' });
+    fireEvent.pointerEnter(region, { pointerType: 'mouse' });
+    hero.getByRole('button', { name: 'Ir a Rol' }).focus();
+    expect(hero.getByTestId('hero-progress').className).not.toMatch(/paused/);
+    fireEvent.click(hero.getByRole('button', { name: 'Pausar el carrusel' }));
+    expect(hero.getByTestId('hero-progress').className).toMatch(/animation-play-state:paused/);
+    fireEvent.click(hero.getByRole('button', { name: 'Reanudar el carrusel' }));
+    expect(hero.getByTestId('hero-progress').className).not.toMatch(/paused/);
+  });
+
   it('puts the navbar over the hero until the page scrolls, and only on the home', async () => {
     const { unmount } = home();
 
@@ -87,7 +146,7 @@ describe('the home', () => {
     expect(header).toHaveAttribute('data-over-hero');
     unmount();
 
-    renderStore(fakeStorefront({ listProducts: async () => catalog }), '/productos');
+    renderStore(fakeStorefront({ products: catalog }), '/productos');
     expect(screen.getByRole('banner')).not.toHaveAttribute('data-over-hero');
   });
 });

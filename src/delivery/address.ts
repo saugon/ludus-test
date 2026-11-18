@@ -123,12 +123,24 @@ export function validateContact({ phone, document }: ContactForm): ContactErrors
   return errors;
 }
 
-const CARRIERS: Record<DeliveryOptions['unavailable'][number]['carrier'], string> = { andreani: 'Andreani' };
+const CARRIER_NAMES: Record<DeliveryOptions['unavailable'][number]['carrier'], string> = {
+  andreani: 'Andreani',
+  correo_argentino: 'Correo Argentino',
+};
 
-export function unavailableReason({ carrier, reason }: DeliveryOptions['unavailable'][number]): string {
-  const name = CARRIERS[carrier] ?? carrier;
-  return reason === 'address_not_served'
-    ? `${name} no llega a esta dirección. Revisá el código postal o retirá en el local.`
+// El nombre del transportista para mostrar; uno que la tienda todavía no conoce se muestra como viene.
+export function carrierName(carrier: string): string {
+  return (CARRIER_NAMES as Record<string, string>)[carrier] ?? carrier;
+}
+
+// Por qué un transportista no cotizó. Con otro que sí cotizó no hace falta ofrecer el retiro: se elige ese.
+export function unavailableReason({ carrier, reason }: DeliveryOptions['unavailable'][number], othersOffered = false): string {
+  const name = carrierName(carrier);
+  if (reason === 'address_not_served') {
+    return othersOffered ? `${name} no llega a esta dirección.` : `${name} no llega a esta dirección. Revisá el código postal o retirá en el local.`;
+  }
+  return othersOffered
+    ? `El envío con ${name} no está disponible en este momento.`
     : `El envío con ${name} no está disponible en este momento. Probá más tarde o retirá en el local.`;
 }
 

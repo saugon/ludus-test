@@ -69,6 +69,7 @@ describe('the unconfigured store', () => {
     render(<App env={FULL} />);
 
     expect(screen.queryByRole('heading', { name: 'Tienda sin configurar' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 1, name: 'Armá tu ejército.' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Ludus Game Store' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Armá tu ejército.' })).toBeInTheDocument();
   });
 });

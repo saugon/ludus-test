@@ -10,7 +10,10 @@ import { button, container, sectionTitle } from '../components/ui';
 export const backLink = 'inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-mute hover:text-bone';
 import { money } from '../lib/format';
 import { useProducts } from '../lib/storefront';
+import { cartCode, cartCodeError, totalWithCode } from '../payment/discountCode';
+import { DISCOUNT_LABELS, percentText } from '../payment/methods';
 import { useCheckout } from './CheckoutProvider';
+import { DiscountCodeField } from './DiscountCodeField';
 
 export type Step = 'cart' | 'shipping' | 'payment';
 
@@ -137,15 +140,24 @@ type SummaryProps = {
   // En el carrito se editan las líneas a la izquierda; en los otros pasos, el resumen las lista.
   showItems: boolean;
   shippingRow: 'later' | 'chosen';
+  // En el paso Pago: descuenta lo que rebaja el medio elegido, y el código según cómo se combina con ese medio.
+  withDiscount?: boolean;
   children: ReactNode;
 };
 
-export function Summary({ showItems, shippingRow, children }: SummaryProps) {
+export function Summary({ showItems, shippingRow, withDiscount = false, children }: SummaryProps) {
   const cart = useCart();
   const { byCode } = useProducts();
-  const { delivery, shipping, total } = useCheckout();
+  const { delivery, shipping, total, discount: methodDiscount, priced, payTotal, paymentMethod } = useCheckout();
+  const discount = withDiscount ? methodDiscount : null;
   const lines = cart.cart?.lines ?? [];
   const currency = cart.cart?.currency;
+  // El código que descuenta: antes de elegir el medio, lo que descuenta sobre los productos; en el paso Pago, lo
+  // que descuenta con el medio elegido (nada si el descuento del medio es mayor y no se suman).
+  const code = cartCodeError(cart.cart) ? null : cartCode(cart.cart);
+  const codePriced = withDiscount ? priced : null;
+  const codeAmount = codePriced ? codePriced.discount_code_amount : code?.amount;
+  const codeOutweighed = codePriced?.discount_code_status === 'outweighed';
 
   let shippingLabel = 'Envío';
   let shippingValue = 'En el paso siguiente';
@@ -188,20 +200,44 @@ export function Summary({ showItems, shippingRow, children }: SummaryProps) {
         </ul>
       )}
 
+      <DiscountCodeField />
+
       <dl className="mt-4 space-y-1.5 border-t border-line pt-4">
         <div className="flex items-baseline justify-between gap-4">
           <dt className="text-mute">Productos</dt>
           <dd className="tabular-nums">{money(cart.cart?.total, currency)}</dd>
         </div>
+        {code && codeAmount && Number(codeAmount) > 0 && (
+          <div className="flex items-baseline justify-between gap-4">
+            <dt className="min-w-0 break-all text-moss">Código {code.code}</dt>
+            <dd className="shrink-0 tabular-nums text-moss">−{money(codeAmount, currency)}</dd>
+          </div>
+        )}
+        {discount && discount.discount_percent && paymentMethod && (
+          <div className="flex items-baseline justify-between gap-4">
+            <dt className="text-moss">
+              Descuento {percentText(discount.discount_percent)} · {DISCOUNT_LABELS[paymentMethod]}
+            </dt>
+            <dd className="shrink-0 tabular-nums text-moss">−{money(discount.discount, currency)}</dd>
+          </div>
+        )}
         <div className="flex items-baseline justify-between gap-4">
           <dt className="text-mute">{shippingLabel}</dt>
           <dd className={`shrink-0 tabular-nums ${shippingRow === 'later' ? 'text-mute' : ''}`}>{shippingValue}</dd>
         </div>
         <div className="mt-3! flex items-baseline justify-between gap-4 border-t border-line pt-3">
           <dt className="text-mute">Total</dt>
-          <dd className="font-ui text-3xl font-bold tabular-nums text-white">{money(shippingRow === 'chosen' ? total : cart.cart?.total, currency)}</dd>
+          <dd className="font-ui text-3xl font-bold tabular-nums text-white">
+            {money(shippingRow === 'chosen' ? (withDiscount ? payTotal : total) : totalWithCode(cart.cart), currency)}
+          </dd>
         </div>
       </dl>
+
+      {code && codeOutweighed && paymentMethod && (
+        <p className="mt-3 text-sm text-mute">
+          El código {code.code} no se suma al descuento por pagar con {DISCOUNT_LABELS[paymentMethod]}, que es mayor: se aplica ese.
+        </p>
+      )}
 
       <div className="mt-4 space-y-2.5">{children}</div>
     </div>

@@ -8,7 +8,7 @@ import { button, container } from '../components/ui';
 import { store } from '../content';
 import { useStorefront } from '../lib/storefront';
 import { useTitle } from '../lib/useTitle';
-import { describeOrder } from '../shopper/orderStatus';
+import { describeOrder, orderNumber } from '../shopper/orderStatus';
 import { firstName, isSessionError, useShopper } from '../shopper/ShopperProvider';
 import { ACCOUNT_PATH, signInPath } from '../shopper/returnPath';
 
@@ -27,7 +27,8 @@ function OrderSkeleton({ className = 'h-20' }: { className?: string }) {
 
 // El pedido elegido va en ?pedido=, así el link se puede compartir y «atrás» vuelve al anterior.
 function orderKey(order: ShopperOrder, index: number): string {
-  return order.sale_number != null ? String(order.sale_number) : `sin-numero-${index}`;
+  const number = orderNumber(order);
+  return number != null ? String(number) : `sin-numero-${index}`;
 }
 
 function OrderList() {

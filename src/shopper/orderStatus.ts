@@ -1,4 +1,5 @@
 import type { ShopperOrder } from '@vertex/storefront-sdk';
+import { paymentMethodOf } from '../payment/methods';
 
 export type Tone = 'ready' | 'progress' | 'done' | 'problem';
 
@@ -43,7 +44,10 @@ export function shipmentLabel(status: ShopperOrder['delivery']['status']): strin
   return status ? SHIPMENT[status] : null;
 }
 
-type DescribedOrder = Pick<ShopperOrder, 'status' | 'fulfillment_status'> & { delivery?: Pick<ShopperOrder['delivery'], 'kind'> };
+type DescribedOrder = Pick<ShopperOrder, 'status' | 'fulfillment_status'> & {
+  delivery?: Pick<ShopperOrder['delivery'], 'kind'>;
+  payment_method?: ShopperOrder['payment_method'];
+};
 
 export function describeOrder(order: DescribedOrder, address: string): OrderView {
   if (order.fulfillment_status === 'cancelled') {
@@ -76,6 +80,22 @@ export function describeOrder(order: DescribedOrder, address: string): OrderView
       default:
         return { label: 'En preparación', tone: 'progress', hint: 'Lo estamos preparando.' };
     }
+  }
+
+  // Transferencia o efectivo: el pedido queda reservado hasta que el local confirma el pago.
+  if (order.status === 'awaiting_payment' && paymentMethodOf(order) === 'transfer') {
+    return {
+      label: 'Esperando la transferencia',
+      tone: 'progress',
+      hint: 'Lo tenemos reservado. Cuando confirmemos la transferencia, lo preparamos.',
+    };
+  }
+  if (order.status === 'awaiting_payment' && paymentMethodOf(order) === 'cash') {
+    return {
+      label: 'A pagar al retirar',
+      tone: 'ready',
+      hint: `Pasá a retirarlo por ${address} y pagalo en efectivo.`,
+    };
   }
 
   switch (order.status) {
@@ -133,4 +153,23 @@ const dateFormat = new Intl.DateTimeFormat('es-AR', {
 export function orderDate(iso: string): string {
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? '' : dateFormat.format(date).replace(/ de /g, ' ');
+}
+
+const timeFormat = new Intl.DateTimeFormat('es-AR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'America/Argentina/Buenos_Aires' });
+const dayKeyFormat = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' });
+const dayFormat = new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short', timeZone: 'America/Argentina/Buenos_Aires' });
+
+// Hasta cuándo se reserva un pedido por transferencia o efectivo, para después de «antes de»:
+// «las 18:30 de hoy» o «las 01:30 del 13 nov».
+export function holdDeadline(iso: string, now: Date = new Date()): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const time = timeFormat.format(date);
+  return dayKeyFormat.format(date) === dayKeyFormat.format(now) ? `las ${time} de hoy` : `las ${time} del ${dayFormat.format(date).replace(/ de /g, ' ')}`;
+}
+
+// El número que ve quien compra: el del pedido en la tienda, que se da al empezar el checkout con cualquier medio y
+// sirve antes y después de pagar. Un pedido de antes de que se numeraran no lo tiene: ahí, el de la venta, si hay.
+export function orderNumber(order: { order_number?: number | null; sale_number?: number | null }): number | null {
+  return order.order_number ?? order.sale_number ?? null;
 }

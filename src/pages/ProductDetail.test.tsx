@@ -37,3 +37,23 @@ describe('the product photo', () => {
     expect(screen.queryByRole('button', { name: /pantalla completa/ })).not.toBeInTheDocument();
   });
 });
+
+describe('a presale product', () => {
+  const year = new Date().getFullYear();
+
+  it('shows the estimated arrival date', async () => {
+    renderStore(fakeStorefront({ getProduct: async () => product({ code: 'BT-NH', presale: true, presale_available_on: `${year}-12-15` }) }), '/productos/BT-NH');
+    expect(await screen.findByText('Llegada estimada: 15 de diciembre.')).toBeInTheDocument();
+  });
+
+  it('says there is no date yet when it has none', async () => {
+    renderStore(fakeStorefront({ getProduct: async () => product({ code: 'BT-NH', presale: true }) }), '/productos/BT-NH');
+    expect(await screen.findByText('Todavía no tenemos fecha estimada de llegada.')).toBeInTheDocument();
+  });
+
+  it('is not flagged when the product is not on presale', async () => {
+    renderStore(fakeStorefront({ getProduct: async () => product({ code: 'BT-NH' }) }), '/productos/BT-NH');
+    await screen.findByRole('heading', { level: 1 });
+    expect(screen.queryByText(/Llegada estimada|fecha estimada/)).not.toBeInTheDocument();
+  });
+});

@@ -1,10 +1,15 @@
 import type { ShopperOrder } from '@vertex/storefront-sdk';
-import { forwardRef } from 'react';
+import { forwardRef, useEffect } from 'react';
 import { messages, store, whatsappUrl } from '../content';
 import { addAmounts, formatAddress } from '../delivery/address';
 import { money } from '../lib/format';
 import { useProducts } from '../lib/storefront';
 import { describeOrder, orderDate, orderDay, orderProgress, shipmentLabel, type Tone } from '../shopper/orderStatus';
+import { useCheckout } from '../checkout/CheckoutProvider';
+import { DISCOUNT_LABELS, holdHoursOf, PAYMENT_LABELS, paymentMethodOf, paysOffline, percentText } from '../payment/methods';
+import { TransferDetails } from '../payment/TransferDetails';
+import { holdDeadline, orderNumber } from '../shopper/orderStatus';
+import { PresaleNote } from './PresaleNote';
 import { ProductImage } from './ProductImage';
 
 const DOTS: Record<Tone, string> = {
@@ -24,7 +29,8 @@ const TONE_TEXT: Record<Tone, string> = {
 const sectionLabel = 'font-ui text-sm font-semibold uppercase tracking-[0.1em] text-mute';
 
 export function orderTitle(order: ShopperOrder): string {
-  return order.sale_number != null ? `Pedido #${order.sale_number}` : 'Pedido sin número';
+  const number = orderNumber(order);
+  return number != null ? `Pedido #${number}` : 'Pedido sin número';
 }
 
 // La fila de la lista de la izquierda.
@@ -130,6 +136,19 @@ export const OrderDetail = forwardRef<HTMLElement, { order: ShopperOrder }>(func
   const products = order.lines.reduce<string | null>((sum, line) => addAmounts(sum, line.total), '0');
   const title = orderTitle(order);
   const carrier = order.delivery.kind === 'carrier';
+  const method = paymentMethodOf(order);
+  const awaitsOffline = order.status === 'awaiting_payment' && paysOffline(order);
+  const awaitsTransfer = awaitsOffline && method === 'transfer';
+  // El pedido no trae la cuenta ni cuándo vence la reserva: salen de los medios de pago del local, la misma cuenta
+  // que muestra el checkout y las horas que reserva hoy cada medio.
+  const { payment } = useCheckout();
+  const { load: loadMethods } = payment;
+  const transfer = payment.methods?.find((option) => option.method === 'transfer')?.transfer ?? null;
+  useEffect(() => {
+    if (awaitsOffline) void loadMethods();
+  }, [awaitsOffline, loadMethods]);
+  const holdHours = holdHoursOf(payment.methods, method);
+  const deadline = holdHours == null ? '' : holdDeadline(new Date(new Date(order.created_at).getTime() + holdHours * 3_600_000).toISOString());
 
   return (
     <article ref={ref} aria-label={title} tabIndex={-1} className="scroll-mt-32 rounded-lg border border-line bg-ink-2 outline-none">
@@ -141,7 +160,7 @@ export const OrderDetail = forwardRef<HTMLElement, { order: ShopperOrder }>(func
           </p>
         </div>
         <a
-          href={whatsappUrl(messages.saleIssue(order.sale_number))}
+          href={whatsappUrl(messages.saleIssue(orderNumber(order)))}
           target="_blank"
           rel="noopener noreferrer"
           className="text-sm text-mute underline underline-offset-4 hover:text-bone"
@@ -158,7 +177,15 @@ export const OrderDetail = forwardRef<HTMLElement, { order: ShopperOrder }>(func
           </p>
         )}
         <p className={progress ? 'text-lg font-semibold' : 'mt-1.5 text-mute'}>{view.hint}</p>
+        {awaitsOffline && deadline && (
+          <p className="mt-1.5 text-mute">Se cancela si no se confirma el pago antes de {deadline}.</p>
+        )}
         <Progress order={order} />
+        {awaitsTransfer && transfer && (
+          <div className="mt-5">
+            <TransferDetails transfer={transfer} total={order.total} currency={order.currency} />
+          </div>
+        )}
       </section>
 
       <section aria-label="Entrega" className="border-b border-line p-5 sm:p-6">
@@ -174,6 +201,9 @@ export const OrderDetail = forwardRef<HTMLElement, { order: ShopperOrder }>(func
                 <ProductImage src={product?.image_url ?? null} alt="" className="size-14 shrink-0 rounded-md" />
                 <span className="min-w-0 flex-1">
                   <span className="block font-semibold leading-snug">{line.name}</span>
+                  {/* El pedido guarda si la línea fue preventa; la fecha, mientras el producto siga en preventa, sale del catálogo. */}
+                  {line.presale &&
+                    (product?.presale ? <PresaleNote availableOn={product.presale_available_on} /> : <PresaleNote availableOn={null} undated={null} />)}
                   <span className="block text-sm text-mute tabular-nums">
                     Cantidad: {line.quantity}
                     {line.quantity > 1 && ` · ${money(line.unit_price, order.currency)} c/u`}
@@ -189,9 +219,29 @@ export const OrderDetail = forwardRef<HTMLElement, { order: ShopperOrder }>(func
             <dt className="text-mute">Productos</dt>
             <dd className="tabular-nums">{money(products, order.currency)}</dd>
           </div>
+          {/* El código de descuento que quedó en el pedido; un backend sin códigos no lo manda. */}
+          {order.discount_code && (
+            <div className="flex items-baseline justify-between gap-4">
+              <dt className="min-w-0 break-all text-moss">Código {order.discount_code.code}</dt>
+              <dd className="shrink-0 tabular-nums text-moss">−{money(order.discount_code.amount, order.currency)}</dd>
+            </div>
+          )}
+          {/* El descuento que tomó el medio de pago al hacer el pedido; un backend sin descuentos no lo manda. */}
+          {order.discount && (
+            <div className="flex items-baseline justify-between gap-4">
+              <dt className="text-moss">
+                Descuento {percentText(order.discount.percent)} · {DISCOUNT_LABELS[method]}
+              </dt>
+              <dd className="tabular-nums text-moss">−{money(order.discount.amount, order.currency)}</dd>
+            </div>
+          )}
           <div className="flex items-baseline justify-between gap-4">
             <dt className="text-mute">{carrier ? 'Envío a domicilio' : 'Retiro en el local'}</dt>
             <dd className="tabular-nums">{carrier ? money(order.delivery.price, order.currency) : 'Gratis'}</dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-4">
+            <dt className="text-mute">Medio de pago</dt>
+            <dd>{PAYMENT_LABELS[method]}</dd>
           </div>
           <div className="flex items-baseline justify-between gap-4 pt-2">
             <dt className="text-mute">Total</dt>

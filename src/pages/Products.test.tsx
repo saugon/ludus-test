@@ -1,7 +1,7 @@
 import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
-import { fakeStorefront, product, signedIn } from '../test/fakes';
+import { cart, fakeStorefront, product, signedIn } from '../test/fakes';
 import { renderStore } from '../test/render';
 
 const LONG_NAME = 'Warhammer 40.000: Leviathan Edición de Coleccionista con Miniaturas Exclusivas y Libro de Reglas de Tapa Dura';
@@ -17,19 +17,39 @@ function categories() {
 }
 
 describe('the catalog', () => {
+  it('marks a product already in the cart up to its stock with a short tag, not a sentence', async () => {
+    localStorage.setItem('vertex-storefront:ludus-test:cart', 'cart-1');
+    renderStore(
+      fakeStorefront({
+        products: [product({ code: 'ASP', name: 'Army Painter Speedpaint Set', category: 'Pinturas', max_quantity: 1 }), product({ code: 'ALI', name: 'Alicates de corte' })],
+        getCart: async () => cart([{ code: 'ASP', quantity: 1, max: 1 }]),
+      }),
+      '/productos',
+    );
+
+    const card = (name: string) => within(screen.getByRole('link', { name }).closest('article')!);
+    await screen.findByRole('link', { name: 'Army Painter Speedpaint Set' });
+    const full = card('Army Painter Speedpaint Set');
+    expect(await full.findByText('Ya tenés 1 en el carrito, el máximo disponible.')).toHaveClass('sr-only');
+    expect(full.getByText('En el carrito')).toBeInTheDocument();
+    expect(full.queryByRole('button', { name: /^Agregar .+ al carrito$/ })).not.toBeInTheDocument();
+    expect(card('Alicates de corte').getByRole('button', { name: /^Agregar .+ al carrito$/ })).toBeInTheDocument();
+  });
+
   it('shows the store header and a vertical category column with "Todos" active', async () => {
-    renderStore(fakeStorefront({ listProducts: async () => catalog }), '/productos');
+    renderStore(fakeStorefront({ products: catalog }), '/productos');
 
     expect(await screen.findByText('3 productos encontrados')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Catálogo de productos' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Categorías' })).toBeInTheDocument();
     expect(categories().getByRole('button', { name: 'Todos' })).toHaveAttribute('aria-pressed', 'true');
-    expect(categories().getAllByRole('button').map((button) => button.textContent?.trim())).toEqual(['Todos', 'Miniaturas', 'Herramientas', 'Libros y codex']);
+    // Cada categoría lleva al lado cuántos productos tiene.
+    expect(categories().getAllByRole('button').map((button) => button.textContent?.trim())).toEqual(['Todos', 'Miniaturas1', 'Herramientas1', 'Libros y codex1']);
   });
 
   it('filters by category with ?categoria=, updates the count and goes back with "Todos"', async () => {
     const user = userEvent.setup();
-    renderStore(fakeStorefront({ listProducts: async () => catalog }), '/productos');
+    renderStore(fakeStorefront({ products: catalog }), '/productos');
 
     await user.click(await categories().findByRole('button', { name: 'Herramientas' }));
     expect(categories().getByRole('button', { name: 'Herramientas' })).toHaveAttribute('aria-pressed', 'true');
@@ -44,7 +64,7 @@ describe('the catalog', () => {
 
   it('filters by availability with ?estado= in the same column', async () => {
     const user = userEvent.setup();
-    renderStore(fakeStorefront({ listProducts: async () => catalog }), '/productos');
+    renderStore(fakeStorefront({ products: catalog }), '/productos');
     const availability = () => within(screen.getByRole('group', { name: 'Disponibilidad' }));
 
     await user.click(await availability().findByRole('button', { name: 'Con stock' }));
@@ -66,7 +86,7 @@ describe('the catalog', () => {
 
   it('has its own search box for mobile that keeps the category', async () => {
     const user = userEvent.setup();
-    renderStore(fakeStorefront({ listProducts: async () => catalog }), '/productos?categoria=Miniaturas');
+    renderStore(fakeStorefront({ products: catalog }), '/productos?categoria=Miniaturas');
 
     const main = within(screen.getByRole('main'));
     await user.type(main.getByRole('searchbox', { name: 'Buscar productos' }), 'leviathan{Enter}');
@@ -75,14 +95,63 @@ describe('the catalog', () => {
   });
 
   it('combines the category from the URL with the search in the count', async () => {
-    renderStore(fakeStorefront({ listProducts: async () => catalog }), '/productos?categoria=Herramientas&q=codex');
+    renderStore(fakeStorefront({ products: catalog }), '/productos?categoria=Herramientas&q=codex');
 
     expect(await screen.findByText('0 productos encontrados en Herramientas')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Resultados para «codex»' })).toBeInTheDocument();
   });
 
+  it('opens the subcategories of the chosen category and filters by one with ?subcategoria=', async () => {
+    const user = userEvent.setup();
+    const withSubcategories = [
+      ...catalog,
+      product({ code: 'BOY', name: 'Boyz', category: 'Miniaturas', subcategory: 'Orks' }),
+      product({ code: 'WAR', name: 'Necron Warriors', category: 'Miniaturas', subcategory: 'Necrons' }),
+    ];
+    renderStore(fakeStorefront({ products: withSubcategories }), '/productos');
+
+    expect(await screen.findByText('5 productos encontrados')).toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Subcategorías de Miniaturas' })).not.toBeInTheDocument();
+
+    await user.click(categories().getByRole('button', { name: 'Miniaturas' }));
+    expect(categories().getByRole('button', { name: 'Miniaturas' })).toHaveAttribute('aria-expanded', 'true');
+    const subcategories = within(screen.getByRole('list', { name: 'Subcategorías de Miniaturas' }));
+    expect(subcategories.getAllByRole('button').map((button) => button.textContent)).toEqual(['Necrons1', 'Orks1']);
+    expect(screen.getByText('3 productos encontrados en Miniaturas')).toBeInTheDocument();
+
+    await user.click(subcategories.getByRole('button', { name: 'Orks' }));
+    expect(subcategories.getByRole('button', { name: 'Orks' })).toHaveAttribute('aria-pressed', 'true');
+    expect(categories().getByRole('button', { name: 'Miniaturas' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByText('1 producto encontrado en Miniaturas › Orks')).toBeInTheDocument();
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+
+    // Volver a la categoría principal saca la subcategoría.
+    await user.click(categories().getByRole('button', { name: 'Miniaturas' }));
+    expect(screen.getByText('3 productos encontrados en Miniaturas')).toBeInTheDocument();
+  });
+
+  it('opens the category and subcategory that come in the address', async () => {
+    const withSubcategories = [...catalog, product({ code: 'BOY', name: 'Boyz', category: 'Miniaturas', subcategory: 'Orks' })];
+    renderStore(fakeStorefront({ products: withSubcategories }), '/productos?categoria=Miniaturas&subcategoria=Orks');
+
+    expect(await screen.findByText('1 producto encontrado en Miniaturas › Orks')).toBeInTheDocument();
+    expect(within(screen.getByRole('list', { name: 'Subcategorías de Miniaturas' })).getByRole('button', { name: 'Orks' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('loads every page of the catalog', async () => {
+    const storefront = fakeStorefront();
+    storefront.listProductsPage
+      .mockResolvedValueOnce({ products: catalog.slice(0, 2), nextCursor: 'next' })
+      .mockResolvedValueOnce({ products: catalog.slice(2), nextCursor: null });
+    renderStore(storefront, '/productos');
+
+    expect(await screen.findByText('3 productos encontrados')).toBeInTheDocument();
+    expect(storefront.listProductsPage).toHaveBeenNthCalledWith(1, { limit: 100, cursor: null });
+    expect(storefront.listProductsPage).toHaveBeenNthCalledWith(2, { limit: 100, cursor: 'next' });
+  });
+
   it('keeps a category without products visible and active, with 0 results', async () => {
-    renderStore(fakeStorefront({ listProducts: async () => catalog }), '/productos?categoria=Escenografía');
+    renderStore(fakeStorefront({ products: catalog }), '/productos?categoria=Escenografía');
 
     expect(await screen.findByText('0 productos encontrados en Escenografía')).toBeInTheDocument();
     expect(categories().getByRole('button', { name: 'Escenografía' })).toHaveAttribute('aria-pressed', 'true');
@@ -90,7 +159,7 @@ describe('the catalog', () => {
   });
 
   it('renders the cards like the home ones: long name as is, 7-digit price and the right action', async () => {
-    renderStore(fakeStorefront({ listProducts: async () => catalog }), '/productos');
+    renderStore(fakeStorefront({ products: catalog }), '/productos');
 
     const cards = await screen.findAllByRole('article');
     const leviathan = cards.find((card) => card.textContent?.includes(LONG_NAME))!;
@@ -101,24 +170,24 @@ describe('the catalog', () => {
     expect(within(leviathan).getByText('$ 1.250.000')).toHaveClass('whitespace-nowrap');
     // El nombre largo se corta en tres líneas con CSS, sin tocar el texto.
     expect(link.closest('h3')).toHaveClass('line-clamp-3');
-    expect(within(leviathan).getByRole('button', { name: 'Agregar' })).toBeInTheDocument();
+    expect(within(leviathan).getByRole('button', { name: /^Agregar .+ al carrito$/ })).toBeInTheDocument();
 
     const nighthaunt = cards.find((card) => card.textContent?.includes('Battletome: Nighthaunt'))!;
     expect(within(nighthaunt).getByText('Por encargo')).toBeInTheDocument();
     const consult = within(nighthaunt).getByRole('link', { name: 'Consultar por Battletome: Nighthaunt en WhatsApp' });
     expect(consult).toHaveAttribute('href', expect.stringContaining('wa.me/'));
     expect(decodeURIComponent(consult.getAttribute('href')!)).toContain('"Battletome: Nighthaunt"');
-    expect(within(nighthaunt).queryByRole('button', { name: 'Agregar' })).not.toBeInTheDocument();
+    expect(within(nighthaunt).queryByRole('button', { name: /^Agregar .+ al carrito$/ })).not.toBeInTheDocument();
   });
 
   it('adds to the cart from a card and the navbar cart shows the count', async () => {
     const user = userEvent.setup();
-    const storefront = fakeStorefront({ listProducts: async () => catalog });
+    const storefront = fakeStorefront({ products: catalog });
     renderStore(storefront, '/productos');
 
     expect(await screen.findByRole('button', { name: 'Abrir carrito, vacío' })).toBeInTheDocument();
     const alicates = (await screen.findAllByRole('article')).find((card) => card.textContent?.includes('Alicates de corte'))!;
-    await user.click(within(alicates).getByRole('button', { name: 'Agregar' }));
+    await user.click(within(alicates).getByRole('button', { name: /^Agregar .+ al carrito$/ }));
 
     expect(storefront.setCartLines).toHaveBeenCalledWith([{ code: 'ALI', quantity: 1 }]);
     const cartButton = await screen.findByRole('button', { name: 'Abrir carrito, 1 producto' });
@@ -146,22 +215,17 @@ describe('the navbar', () => {
     expect(screen.queryByRole('link', { name: 'Ingresar' })).not.toBeInTheDocument();
   });
 
-  it('shows the announcement bar with its three messages and the logo with its subtitle', async () => {
+  it('shows the logo with its subtitle, without an announcement bar above the navbar', async () => {
     renderStore(fakeStorefront(), '/');
 
-    const bar = await screen.findByRole('list', { name: 'Novedades' });
-    expect(within(bar).getAllByRole('listitem').map((item) => item.textContent)).toEqual([
-      'Stock actualizado semanalmente',
-      'Envíos a todo el país',
-      'Respondemos a tus consultas',
-    ]);
-    const home = screen.getByRole('link', { name: 'Ludus Game Store, inicio' });
+    const home = await screen.findByRole('link', { name: 'Ludus Game Store, inicio' });
+    expect(screen.queryByRole('list', { name: 'Novedades' })).not.toBeInTheDocument();
     expect(home).toHaveTextContent('Ludus Game StoreWargames · Argentina');
   });
 
   it('opens the search below the navbar from the magnifier and closes it after searching', async () => {
     const user = userEvent.setup();
-    renderStore(fakeStorefront({ listProducts: async () => catalog }), '/');
+    renderStore(fakeStorefront({ products: catalog }), '/');
     const header = within(screen.getByRole('banner'));
 
     expect(header.queryByRole('searchbox')).not.toBeInTheDocument();

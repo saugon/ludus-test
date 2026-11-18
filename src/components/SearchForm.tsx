@@ -25,6 +25,8 @@ export function SearchForm({ className = '', autoFocus = false, onSearch, size =
         if (value) next.set('q', value);
         const category = params.get('categoria');
         if (category && pathname === '/productos') next.set('categoria', category);
+        const subcategory = params.get('subcategoria');
+        if (category && subcategory && pathname === '/productos') next.set('subcategoria', subcategory);
         navigate({ pathname: '/productos', search: next.toString() ? `?${next}` : '' });
         onSearch?.();
       }}

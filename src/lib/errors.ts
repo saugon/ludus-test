@@ -1,5 +1,6 @@
 import { StorefrontError } from '@vertex/storefront-sdk';
 import { CONFIG_VARS } from '../config';
+import { discountCodeReason, discountCodeRefusal } from '../payment/discountCode';
 
 export type ShortLine = { code: string; requested: number; available: number };
 
@@ -80,6 +81,18 @@ export function describeError(error: unknown, names: Record<string, string> = {}
   const inContext = context === 'quote' ? describeQuoteError(error) : null;
   if (inContext) return inContext;
 
+  // El checkout volvió a validar el código del carrito y lo rechazó.
+  const refusal = discountCodeRefusal(error);
+  if (refusal) {
+    return {
+      kind: 'input',
+      title: 'El código de descuento no se puede usar',
+      message: `${discountCodeReason(refusal)} Quitalo o elegí otro medio de pago para seguir.`,
+      retry: false,
+      lines: [],
+    };
+  }
+
   switch (error.code) {
     case 'insufficient_stock': {
       const detail = error.lines
@@ -115,7 +128,7 @@ export function describeError(error: unknown, names: Record<string, string> = {}
         kind: 'busy',
         title: 'Ya hay un pago en curso',
         message:
-          'Este carrito tiene un pago abierto. Terminalo en la ventana de pago o esperá a que venza para volver a intentar. Mientras tanto no se puede cambiar el carrito ni la forma de entrega.',
+          'Este carrito tiene un pago abierto. Terminalo, o esperá a que venza para volver a intentar: con transferencia o efectivo, la reserva puede durar varias horas. Mientras tanto no se puede cambiar el carrito, la forma de entrega ni el medio de pago.',
         retry: true,
         lines: [],
       };

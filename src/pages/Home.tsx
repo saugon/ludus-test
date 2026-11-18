@@ -1,19 +1,20 @@
 import type { Product } from '@vertex/storefront-sdk';
-import type { ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { ANNOUNCEMENTS } from '../components/AnnouncementBar';
+import { PROMISES } from '../components/promises';
 import { Carousel } from '../components/Carousel';
 import { ErrorNotice } from '../components/ErrorNotice';
-import { ClockIcon, InstagramIcon, PinIcon, WhatsAppIcon } from '../components/Icons';
+import { ChevronLeftIcon, ChevronRightIcon, ClockIcon, InstagramIcon, PauseIcon, PinIcon, PlayIcon, WhatsAppIcon } from '../components/Icons';
 import { SearchForm } from '../components/SearchForm';
 import { ShowcaseEncargoCard, ShowcaseProductCard } from '../components/ShowcaseCard';
 import { LoadingLabel } from '../components/Skeletons';
 import { container, sectionTitle } from '../components/ui';
 import { messages, store, whatsappUrl } from '../content';
-import { categoriesOf, normalize } from '../lib/search';
+import { categoryTree, normalize } from '../lib/search';
 import { isOrderable, useProducts } from '../lib/storefront';
 import { useTitle } from '../lib/useTitle';
 import { asset } from '../lib/paths';
+import { prefersReducedMotion } from '../lib/motion';
 
 function featured(products: Product[]): Product[] {
   const available = products.filter(isOrderable);
@@ -39,26 +40,111 @@ function SectionHeading({ id, title, subtitle, action }: { id: string; title: st
   );
 }
 
-// Alto del primer pantallazo: la pantalla menos la barra de anuncios (2rem), así la franja de promesas entra entera.
-const heroHeight = 'min-h-[min(100svh,48rem)] sm:min-h-[44rem] lg:min-h-[max(40rem,min(calc(100svh-2rem),60rem))]';
-const heroCta = 'inline-flex min-h-13 items-center justify-center gap-2 rounded-full px-7 font-ui text-lg font-bold transition-[background-color,box-shadow,transform] active:translate-y-px';
+// Alto del primer pantallazo: la pantalla entera, con la franja de promesas al pie.
+const heroHeight = 'min-h-[min(100svh,48rem)] sm:min-h-[44rem] lg:min-h-[max(40rem,min(100svh,60rem))]';
+// Cambio de diapositiva: el texto que se va desaparece rápido y recién después entra el nuevo, en cascada (título,
+// párrafo, botones), así nunca se ven dos textos superpuestos.
+const fadeOut = 'group-data-hidden/slide:opacity-0 group-data-hidden/slide:duration-200 group-data-hidden/slide:delay-0';
+const fadeIn = (delay: string) => `transition-opacity duration-500 ease-out ${delay} ${fadeOut}`;
+// En los botones la opacidad va en la misma lista que las transiciones del hover, con su propia duración y demora.
+const heroCta =
+  'inline-flex min-h-13 items-center justify-center gap-2 rounded-full px-7 font-ui text-lg font-bold transition-[background-color,box-shadow,translate,opacity] duration-[150ms,150ms,150ms,500ms] ease-out active:translate-y-px group-data-hidden/slide:opacity-0 group-data-hidden/slide:duration-[150ms,150ms,150ms,200ms] group-data-hidden/slide:delay-0';
+const primaryCta = `${heroCta} bg-ember text-ember-ink shadow-[0_6px_28px_rgba(245,106,45,0.5)] hover:bg-ember-hi hover:shadow-[0_8px_36px_rgba(245,106,45,0.65)] active:bg-ember-lo`;
+const glassCta = `${heroCta} border border-white/25 bg-white/10 text-white backdrop-blur-md hover:border-white/45 hover:bg-white/18`;
+
+type HeroSlide = {
+  name: string;
+  // Prefijo de las fotos en public/img: <photo>-640.webp, -1024.webp y -1600.webp (16:9; la de wargames, más alta:
+  // se le agregó fondo arriba para que el casco no quede pegado al navbar).
+  photo: string;
+  alt: string;
+  // Encuadre de la foto en mobile, tablet y desktop, para que el motivo no quede tapado por el texto.
+  position: string;
+  title: [string, string];
+  text: string;
+  // Segundo botón, por WhatsApp.
+  secondary: { label: string; href: string };
+};
+
+const HERO_SLIDES: HeroSlide[] = [
+  {
+    name: 'Wargames',
+    photo: 'hero',
+    alt: 'Miniatura de un Space Marine pintada a mano',
+    position: 'object-[52%_30%] sm:object-[62%_25%] lg:object-[70%_20%]',
+    title: ['Armá tu', 'ejército.'],
+    text: 'Miniaturas, pinturas y todo lo que necesitás para Warhammer 40.000, Age of Sigmar y más. Comprá online y retiralo en el local.',
+    secondary: { label: 'Hacenos tu encargo', href: whatsappUrl(messages.order) },
+  },
+  {
+    name: 'Juegos de cartas',
+    photo: 'hero-tcg',
+    alt: 'Dos mazos de cartas atados con hilo y dos dados de veinte caras sobre una mesa de madera',
+    position: 'object-[62%_50%] sm:object-[60%_50%] lg:object-center',
+    title: ['Barajá', 'y repartí.'],
+    text: 'Sobres, mazos y accesorios para tus juegos de cartas coleccionables: folios, carpetas y deck boxes para cuidar tu colección.',
+    secondary: { label: 'Hacenos tu encargo', href: whatsappUrl(messages.order) },
+  },
+  {
+    name: 'Rol',
+    photo: 'hero-rol',
+    alt: 'Dados de rol de colores sobre una hoja de personaje en español',
+    position: 'object-[38%_50%] sm:object-[45%_50%] lg:object-center',
+    title: ['Tirá', 'iniciativa.'],
+    text: 'Manuales, dados y pantallas para Dungeons & Dragons y otros juegos de rol. Y mesas en el local para tu próxima campaña.',
+    secondary: { label: 'Reservá tu mesa', href: whatsappUrl(messages.table) },
+  },
+];
+
+// Duración de cada diapositiva. Está en la animación de la barra de progreso (hero-progress, 7s): al terminar de
+// llenarse pasa a la siguiente, así la barra y el cambio nunca se desfasan y la pausa congela las dos cosas.
 
 function Hero() {
+  const [active, setActive] = useState(0);
+  // Corre siempre; lo frena el botón de pausa (`stopped`) y, mientras tanto, el cursor sobre un botón o link del hero
+  // (eso es solo CSS: ver `.hero-carousel` en index.css).
+  const [stopped, setStopped] = useState(false);
+  const [reduced] = useState(prefersReducedMotion);
+  const swipeStart = useRef<number | null>(null);
+  const playing = !stopped && !reduced;
+  const count = HERO_SLIDES.length;
+
+  const go = (index: number) => setActive((index + count) % count);
+
   return (
     // Sube por debajo del navbar, que en la home arranca transparente.
-    <section aria-labelledby="hero-title" className={`relative isolate -mt-16 flex flex-col overflow-hidden bg-ink-0 lg:-mt-[4.5rem] ${heroHeight}`}>
-      <img
-        src={asset('/img/hero-1024.webp')}
-        srcSet={asset('/img/hero-640.webp 640w, /img/hero-1024.webp 1024w, /img/hero-1600.webp 1600w')}
-        sizes="100vw"
-        alt="Miniatura de un Space Marine pintada a mano"
-        width={1600}
-        height={900}
-        fetchPriority="high"
-        className="absolute inset-0 -z-10 size-full object-cover object-[52%_18%] sm:object-[62%_25%] lg:object-[70%_30%]"
-      />
+    <section
+      aria-roledescription="carrusel"
+      aria-label="Lo que vas a encontrar en Ludus"
+      className={`hero-carousel relative isolate -mt-16 flex touch-pan-y flex-col overflow-hidden bg-ink-0 lg:-mt-[4.5rem] ${heroHeight}`}
+      onPointerDown={(event) => {
+        if (event.pointerType !== 'mouse') swipeStart.current = event.clientX;
+      }}
+      onPointerUp={(event) => {
+        if (swipeStart.current === null) return;
+        const delta = event.clientX - swipeStart.current;
+        swipeStart.current = null;
+        if (Math.abs(delta) > 50) go(active + (delta < 0 ? 1 : -1));
+      }}
+      onPointerCancel={() => (swipeStart.current = null)}
+    >
+      {HERO_SLIDES.map((slide, index) => (
+        <img
+          key={slide.photo}
+          src={asset(`/img/${slide.photo}-1024.webp`)}
+          srcSet={asset(`/img/${slide.photo}-640.webp 640w, /img/${slide.photo}-1024.webp 1024w, /img/${slide.photo}-1600.webp 1600w`)}
+          sizes="100vw"
+          alt={slide.alt}
+          aria-hidden={index !== active || undefined}
+          width={1600}
+          height={900}
+          fetchPriority={index === 0 ? 'high' : 'low'}
+          decoding={index === 0 ? undefined : 'async'}
+          className={`absolute inset-0 -z-10 size-full object-cover transition-opacity duration-1000 ease-out ${slide.position} ${index === active ? 'opacity-100' : 'opacity-0'}`}
+        />
+      ))}
       {/* Contraste del texto: en mobile, de abajo hacia arriba; en desktop, un degradado diagonal que oscurece la
-          esquina inferior izquierda (donde está el texto) y deja limpio al marine. */}
+          esquina inferior izquierda (donde está el texto) y deja limpia la foto. */}
       <div
         aria-hidden="true"
         className="absolute inset-0 -z-10 bg-gradient-to-t from-ink-0 from-25% via-ink-0/50 via-55% to-transparent lg:bg-[linear-gradient(35deg,rgba(6,7,16,0.94)_0%,rgba(6,7,16,0.78)_28%,rgba(6,7,16,0.35)_50%,transparent_68%)]"
@@ -67,59 +153,139 @@ function Hero() {
 
       <div className={`${container} flex flex-1 flex-col justify-end pb-8 pt-28 lg:justify-start lg:pt-32`}>
         <div className="max-w-xl lg:my-auto">
-          <h1
-            id="hero-title"
-            className="text-[clamp(4rem,12vw,7.5rem)] uppercase leading-[0.92] tracking-[0.01em] text-white lg:text-[clamp(5rem,min(8vw,13vh),7.5rem)]"
-          >
-            <span className="block">Armá tu</span> <span className="block text-ember">ejército.</span>
-          </h1>
-          <p className="mt-5 max-w-md font-ui text-lg font-medium leading-snug text-bone [text-shadow:0_1px_14px_rgba(0,0,0,0.65)] sm:text-xl">
-            Miniaturas, pinturas y todo lo que necesitás para Warhammer 40.000, Age of Sigmar y más. Comprá online y retiralo en
-            el local.
-          </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link
-              to="/productos"
-              className={`${heroCta} bg-ember text-ember-ink shadow-[0_6px_28px_rgba(245,106,45,0.5)] hover:bg-ember-hi hover:shadow-[0_8px_36px_rgba(245,106,45,0.65)] active:bg-ember-lo`}
-            >
-              Ver productos <span aria-hidden="true">→</span>
-            </Link>
-            <a
-              href={whatsappUrl(messages.order)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={`${heroCta} border border-white/25 bg-white/10 text-white backdrop-blur-md hover:border-white/45 hover:bg-white/18`}
-            >
-              <WhatsAppIcon className="text-moss" /> Hacenos tu encargo
-            </a>
+          <h1 className="sr-only">{store.name}</h1>
+          {/* Todas las diapositivas ocupan la misma celda: el alto es el de la más larga y el texto no salta al cambiar. */}
+          <div className="grid" aria-live={playing ? 'off' : 'polite'}>
+            {HERO_SLIDES.map((slide, index) => {
+              const current = index === active;
+              return (
+                <div
+                  key={slide.photo}
+                  role="group"
+                  aria-roledescription="diapositiva"
+                  aria-label={`${index + 1} de ${count}: ${slide.name}`}
+                  inert={!current}
+                  // El fundido va en el título, el texto y cada botón, nunca en un contenedor: un padre con la opacidad
+                  // animándose corta el backdrop-blur del botón de vidrio, que se ve sin desenfoque hasta que termina.
+                  className={`group/slide [grid-area:1/1] ${current ? '' : 'pointer-events-none'}`}
+                  data-hidden={current ? undefined : ''}
+                >
+                  <h2 className={`${fadeIn('delay-200')} text-[clamp(4rem,12vw,7.5rem)] uppercase leading-[0.92] tracking-[0.01em] text-white lg:text-[clamp(5rem,min(8vw,13vh),7.5rem)]`}>
+                    <span className="block">{slide.title[0]}</span> <span className="block text-ember">{slide.title[1]}</span>
+                  </h2>
+                  <p className={`${fadeIn('delay-[260ms]')} mt-5 max-w-md font-ui text-lg font-medium leading-snug text-bone [text-shadow:0_1px_14px_rgba(0,0,0,0.65)] sm:text-xl`}>
+                    {slide.text}
+                  </p>
+                  <div className="mt-8 flex flex-wrap gap-3">
+                    <Link to="/productos" className={`${primaryCta} delay-[0ms,0ms,0ms,320ms]`}>
+                      Ver productos <span aria-hidden="true">→</span>
+                    </Link>
+                    <a href={slide.secondary.href} target="_blank" rel="noopener noreferrer" className={`${glassCta} delay-[0ms,0ms,0ms,380ms]`}>
+                      <WhatsAppIcon className="text-moss" /> {slide.secondary.label}
+                    </a>
+                  </div>
+                </div>
+              );
+            })}
           </div>
           <SearchForm size="lg" className="mt-6 lg:hidden" />
         </div>
-        <a href="#jugar" className="group mt-10 flex w-fit items-center gap-3 font-ui text-sm leading-tight text-bone/75 hover:text-bone">
-          <img src={asset('/img/local-400.webp')} alt="" width={44} height={44} loading="lazy" decoding="async" className="size-11 rounded-md object-cover ring-1 ring-white/15" />
-          <span>
-            Una tarde cualquiera
-            <br />
-            en {street}
-          </span>
-        </a>
+        <div className="mt-10 flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+          <a href="#jugar" className="group flex w-fit items-center gap-3 font-ui text-sm leading-tight text-bone/75 hover:text-bone">
+            <img src={asset('/img/local-400.webp')} alt="" width={44} height={44} loading="lazy" decoding="async" className="size-11 rounded-md object-cover ring-1 ring-white/15" />
+            <span>
+              Una tarde cualquiera
+              <br />
+              en {street}
+            </span>
+          </a>
+          <HeroControls
+            active={active}
+            playing={playing}
+            canPlay={!reduced}
+            onSelect={go}
+            onElapsed={() => go(active + 1)}
+            onToggle={() => setStopped((value) => !value)}
+          />
+        </div>
       </div>
       <Promises />
     </section>
   );
 }
 
-// Va al pie del hero, dentro del primer pantallazo. En mobile no se muestra: la barra de anuncios ya rota los mismos mensajes.
+function HeroControls({
+  active,
+  playing,
+  canPlay,
+  onSelect,
+  onElapsed,
+  onToggle,
+}: {
+  active: number;
+  playing: boolean;
+  // Sin rotación (movimiento reducido) no hay barra: el indicador activo queda lleno.
+  canPlay: boolean;
+  onSelect: (index: number) => void;
+  onElapsed: () => void;
+  onToggle: () => void;
+}) {
+  const round =
+    'flex size-10 items-center justify-center rounded-full border border-white/20 bg-ink-0/40 text-bone backdrop-blur-md transition-colors hover:border-white/45 hover:bg-white/15';
+  return (
+    <div className="flex items-center gap-2">
+      {canPlay && (
+        <button type="button" onClick={onToggle} aria-label={playing ? 'Pausar el carrusel' : 'Reanudar el carrusel'} className={round}>
+          {playing ? <PauseIcon size={16} /> : <PlayIcon size={14} />}
+        </button>
+      )}
+      <button type="button" onClick={() => onSelect(active - 1)} aria-label="Diapositiva anterior" className={round}>
+        <ChevronLeftIcon size={18} />
+      </button>
+      <div className="flex items-center px-1">
+        {HERO_SLIDES.map((slide, index) => (
+          <button
+            key={slide.photo}
+            type="button"
+            onClick={() => onSelect(index)}
+            aria-label={`Ir a ${slide.name}`}
+            aria-current={index === active || undefined}
+            className="group flex h-10 items-center px-1.5"
+          >
+            <span
+              className={`block h-1.5 overflow-hidden rounded-full transition-[width,background-color] duration-300 ${index === active ? `w-10 ${canPlay ? 'bg-white/25' : 'bg-ember'}` : 'w-1.5 bg-white/40 group-hover:bg-white/70'}`}
+            >
+              {index === active && canPlay && (
+                // `key` reinicia la animación en cada diapositiva, también al volver a la misma.
+                <span
+                  key={active}
+                  data-testid="hero-progress"
+                  onAnimationEnd={onElapsed}
+                  className={`hero-progress block size-full origin-left rounded-full bg-ember animate-[hero-progress_7s_linear_forwards] ${playing ? '' : '[animation-play-state:paused]'}`}
+                />
+              )}
+            </span>
+          </button>
+        ))}
+      </div>
+      <button type="button" onClick={() => onSelect(active + 1)} aria-label="Diapositiva siguiente" className={round}>
+        <ChevronRightIcon size={18} />
+      </button>
+    </div>
+  );
+}
+
+// Va al pie del hero, dentro del primer pantallazo. En mobile no se muestra: tres columnas no entran.
 function Promises() {
   return (
     <div className="hidden border-y border-line-soft bg-ink-2/90 backdrop-blur-md sm:block">
       <ul className={`${container} grid grid-cols-3`}>
-        {ANNOUNCEMENTS.map((item, index) => (
+        {PROMISES.map((text, index) => (
           <li
-            key={item.text}
+            key={text}
             className={`flex items-center justify-center px-3 py-4 text-center font-ui text-xs font-bold uppercase tracking-[0.16em] text-dim lg:whitespace-nowrap lg:text-sm ${index > 0 ? 'border-l border-line-soft' : ''}`}
           >
-            {item.text}
+            {text}
           </li>
         ))}
       </ul>
@@ -328,12 +494,12 @@ const CATEGORY_TONES = ['bg-[#2a1912]', 'bg-[#122a20]', 'bg-[#161b2e]', 'bg-[#27
 const categoryPhotos = new Map(Object.entries(store.categoryImages).map(([name, file]) => [normalize(name), file]));
 
 function Categories() {
-  const { products } = useProducts();
-  const categories = categoriesOf(products);
+  const { products, categories: listed } = useProducts();
+  const categories = categoryTree(products, listed).map((node) => node.name);
   if (categories.length === 0) return null;
 
   return (
-    <section aria-labelledby="categorias-title" className="pb-16 pt-16 sm:pb-24 sm:pt-24">
+    <section aria-labelledby="categorias-title" className="bg-ink-0 py-16 sm:py-24">
       <SectionHeading id="categorias-title" title="Comprá por categoría" />
       <Carousel label="Categorías">
         {categories.map((name, index) => {
@@ -443,10 +609,10 @@ export function Home() {
     <>
       <Hero />
       <Featured />
-      <PlayAtTheStore />
-      <Encargos />
-      <About />
       <Categories />
+      <Encargos />
+      <PlayAtTheStore />
+      <About />
       <Contact />
     </>
   );

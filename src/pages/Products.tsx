@@ -6,7 +6,7 @@ import { SearchForm } from '../components/SearchForm';
 import { CardSkeleton, LoadingLabel } from '../components/Skeletons';
 import { button, container, sectionTitle } from '../components/ui';
 import { messages, whatsappUrl } from '../content';
-import { categoriesOf, filterProducts, type StockFilter } from '../lib/search';
+import { categoryTree, filterProducts, type CategoryNode, type StockFilter } from '../lib/search';
 import { isOrderable, useProducts } from '../lib/storefront';
 import { useTitle } from '../lib/useTitle';
 
@@ -21,6 +21,7 @@ const filterItem =
   'flex w-full items-center gap-2 rounded-lg px-[0.8rem] py-[0.55rem] text-left font-ui text-[0.88rem] font-semibold leading-normal transition-colors';
 const filterOn = 'bg-ember/10 text-ember';
 const filterOff = 'text-mute hover:bg-white/4 hover:text-bone';
+const countBadge = 'ml-auto shrink-0 pl-2 font-ui text-xs font-semibold tabular-nums text-dim';
 const sidebarTitle = 'mb-4 font-display text-[1.2rem] leading-[1.2] tracking-[0.04em] text-white';
 
 function GridIcon() {
@@ -32,17 +33,26 @@ function GridIcon() {
   );
 }
 
+// Una categoría o subcategoría que llega por URL y no tiene productos igual se muestra activa, para que se entienda el «0».
+function withRequested(tree: CategoryNode[], category: string, subcategory: string, loaded: boolean): CategoryNode[] {
+  if (!category || !loaded) return tree;
+  const node = tree.find((entry) => entry.name === category);
+  if (!node) return [...tree, { name: category, count: 0, subcategories: subcategory ? [{ name: subcategory, count: 0 }] : [] }];
+  if (!subcategory || node.subcategories.some((sub) => sub.name === subcategory)) return tree;
+  return tree.map((entry) => (entry === node ? { ...node, subcategories: [...node.subcategories, { name: subcategory, count: 0 }] } : entry));
+}
+
 export function Products() {
-  const { status, products, error, reload } = useProducts();
+  const { status, products, error, reload, categories: listed } = useProducts();
   const [params, setParams] = useSearchParams();
   const query = params.get('q')?.trim() ?? '';
   const category = params.get('categoria') ?? '';
   const stockParam = params.get('estado');
   const stock: StockFilter = stockParam === 'disponible' || stockParam === 'encargo' ? stockParam : 'todos';
-  const known = categoriesOf(products);
-  // Una categoría que llega por URL y no tiene productos igual se muestra activa, para que se entienda el "0".
-  const categories = category && status !== 'loading' && !known.includes(category) ? [...known, category] : known;
-  const results = filterProducts(products, { query, category, stock });
+  // La subcategoría sólo cuenta dentro de su categoría principal.
+  const subcategory = category ? (params.get('subcategoria') ?? '') : '';
+  const categories = withRequested(categoryTree(products, listed), category, subcategory, status !== 'loading');
+  const results = filterProducts(products, { query, category, subcategory, stock });
 
   useTitle(query ? `Resultados para «${query}»` : 'Productos');
 
@@ -50,6 +60,16 @@ export function Products() {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value);
     else next.delete(key);
+    setParams(next, { replace: true });
+  }
+
+  // Elegir una categoría principal (o «Todos») limpia la subcategoría; una subcategoría fija también su categoría.
+  function chooseCategory(name: string, sub = '') {
+    const next = new URLSearchParams(params);
+    if (name) next.set('categoria', name);
+    else next.delete('categoria');
+    if (sub) next.set('subcategoria', sub);
+    else next.delete('subcategoria');
     setParams(next, { replace: true });
   }
 
@@ -78,22 +98,44 @@ export function Products() {
             <div role="group" aria-label="Categorías">
               <ul className="flex flex-col gap-[0.2rem]">
                 <li>
-                  <button type="button" aria-pressed={!category} onClick={() => update('categoria', '')} className={`${filterItem} ${!category ? filterOn : filterOff}`}>
+                  <button type="button" aria-pressed={!category} onClick={() => chooseCategory('')} className={`${filterItem} ${!category ? filterOn : filterOff}`}>
                     <GridIcon /> Todos
                   </button>
                 </li>
-                {categories.map((name) => (
-                  <li key={name}>
-                    <button
-                      type="button"
-                      aria-pressed={category === name}
-                      onClick={() => update('categoria', category === name ? '' : name)}
-                      className={`${filterItem} [overflow-wrap:anywhere] ${category === name ? filterOn : filterOff}`}
-                    >
-                      {name}
-                    </button>
-                  </li>
-                ))}
+                {categories.map((node) => {
+                  const open = category === node.name;
+                  return (
+                    <li key={node.name}>
+                      <button
+                        type="button"
+                        aria-pressed={open && !subcategory}
+                        aria-expanded={node.subcategories.length > 0 ? open : undefined}
+                        onClick={() => chooseCategory(open && !subcategory ? '' : node.name)}
+                        className={`${filterItem} [overflow-wrap:anywhere] ${open && !subcategory ? filterOn : open ? 'text-bone hover:bg-white/4' : filterOff}`}
+                      >
+                        <span className="min-w-0">{node.name}</span>
+                        <span aria-hidden="true" className={countBadge}>{node.count}</span>
+                      </button>
+                      {open && node.subcategories.length > 0 && (
+                        <ul aria-label={`Subcategorías de ${node.name}`} className="mt-[0.2rem] ml-3 flex flex-col gap-[0.2rem] border-l border-line pl-2">
+                          {node.subcategories.map((sub) => (
+                            <li key={sub.name}>
+                              <button
+                                type="button"
+                                aria-pressed={subcategory === sub.name}
+                                onClick={() => chooseCategory(node.name, subcategory === sub.name ? '' : sub.name)}
+                                className={`${filterItem} py-[0.45rem] text-[0.82rem] [overflow-wrap:anywhere] ${subcategory === sub.name ? filterOn : filterOff}`}
+                              >
+                                <span className="min-w-0">{sub.name}</span>
+                                <span aria-hidden="true" className={countBadge}>{sub.count}</span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           </div>
@@ -125,7 +167,7 @@ export function Products() {
           {status !== 'loading' && (
             <p className="mb-4 font-ui text-[0.82rem] font-semibold tracking-[0.04em] text-dim" aria-live="polite">
               {results.length === 1 ? '1 producto encontrado' : `${results.length} productos encontrados`}
-              {category && ` en ${category}`}
+              {category && ` en ${category}${subcategory ? ` › ${subcategory}` : ''}`}
             </p>
           )}
           {status === 'error' && products.length === 0 ? (

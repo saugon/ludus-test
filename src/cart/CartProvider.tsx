@@ -11,6 +11,7 @@ import {
 } from 'react';
 import type { ShortLine } from '../lib/errors';
 import { useStorefront } from '../lib/storefront';
+import { soldCart } from '../payment/methods';
 import { clampQuantity, itemCount, linesOf, quantityIn, withQuantity } from './lines';
 
 type Status = 'loading' | 'ready' | 'error';
@@ -29,6 +30,10 @@ export type CartValue = {
   remove: (code: string) => Promise<boolean>;
   reportShortages: (lines: ShortLine[]) => void;
   fixShortages: () => Promise<boolean>;
+  // Aplica o quita el código de descuento. Devuelven null si salió bien o el error, que se muestra al lado del
+  // código y no como error del carrito.
+  applyCode: (code: string) => Promise<unknown>;
+  removeCode: () => Promise<unknown>;
   startNewCart: () => void;
   reload: () => Promise<void>;
   clearError: () => void;
@@ -40,6 +45,14 @@ const CartContext = createContext<CartValue | null>(null);
 
 export function cartStorageKey(venue: string): string {
   return `vertex-storefront:${venue}:cart`;
+}
+
+function forgetCart(venue: string) {
+  try {
+    localStorage.removeItem(cartStorageKey(venue));
+  } catch {
+    // Without storage there is no saved token to forget.
+  }
 }
 
 export function countStorageKey(venue: string): string {
@@ -79,7 +92,11 @@ export function CartProvider({ venue, children }: { venue: string; children: Rea
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const generation = useRef(0);
 
-  const commit = useCallback((next: Cart | null) => {
+  const commit = useCallback((loaded: Cart | null) => {
+    // Un carrito pagado, o reservado por transferencia o efectivo, es una compra hecha: ese carrito queda con el pedido
+    // (que sigue en /pedido y en Mis pedidos) y quien compra sigue con uno nuevo.
+    const next = loaded && soldCart(loaded) ? null : loaded;
+    if (loaded && !next) forgetCart(venue);
     cartRef.current = next;
     setCart(next);
     writeCount(venue, itemCount(next));
@@ -160,12 +177,51 @@ export function CartProvider({ venue, children }: { venue: string; children: Rea
 
   const remove = useCallback((code: string) => write((lines) => withQuantity(lines, code, 0)), [write]);
 
+  // En la misma cola que las líneas: el carrito que vuelve es siempre el de la última escritura.
+  const writeCode = useCallback(
+    (send: () => Promise<Cart>) => {
+      setPending((count) => count + 1);
+      const run = queue.current.then(async () => {
+        try {
+          const next = await send();
+          generation.current += 1;
+          commit(next);
+          setStatus('ready');
+          return null;
+        } catch (failure) {
+          // El carrito ya se pagó o lo tomó otro pedido: se vuelve a pedir para mostrarlo como está.
+          if (failure instanceof StorefrontError && (failure.code === 'cart_closed' || failure.code === 'checkout_in_progress')) void reload();
+          return failure ?? new Error('discount code failed');
+        } finally {
+          setPending((count) => count - 1);
+        }
+      });
+      queue.current = run;
+      return run;
+    },
+    [commit, reload],
+  );
+
+  const applyCode = useCallback((code: string) => writeCode(() => storefront.applyDiscountCode(code)), [writeCode, storefront]);
+  const removeCode = useCallback(() => writeCode(() => storefront.removeDiscountCode()), [writeCode, storefront]);
+
   const reportShortages = useCallback((lines: ShortLine[]) => {
     setShortages(new Map(lines.map((line) => [line.code, line.available])));
   }, []);
 
+  // Si el stock bajó después de agregar, el carrito llega con más unidades que el máximo sin que ninguna escritura falle.
+  const allShortages = useMemo(() => {
+    const merged = new Map(shortages);
+    for (const line of cart?.lines ?? []) {
+      if (line.code && line.status === 'available' && line.max_quantity >= 1 && line.quantity > line.max_quantity && !merged.has(line.code)) {
+        merged.set(line.code, line.max_quantity);
+      }
+    }
+    return merged.size === shortages.size ? shortages : merged;
+  }, [cart, shortages]);
+
   const fixShortages = useCallback(() => {
-    const targets = new Map(shortages);
+    const targets = new Map(allShortages);
     return write((lines) =>
       lines.flatMap((line) => {
         const available = targets.get(line.code);
@@ -173,14 +229,10 @@ export function CartProvider({ venue, children }: { venue: string; children: Rea
         return available > 0 ? [{ ...line, quantity: Math.min(line.quantity, available) }] : [];
       }),
     );
-  }, [shortages, write]);
+  }, [allShortages, write]);
 
   const startNewCart = useCallback(() => {
-    try {
-      localStorage.removeItem(cartStorageKey(venue));
-    } catch {
-      // Without storage there is no saved token to forget.
-    }
+    forgetCart(venue);
     commit(null);
     setError(null);
     setShortages(new Map());
@@ -197,20 +249,22 @@ export function CartProvider({ venue, children }: { venue: string; children: Rea
       count: cart ? itemCount(cart) : status === 'loading' ? rememberedCount : 0,
       saving: pending > 0,
       error,
-      shortages,
+      shortages: allShortages,
       drawerOpen,
       add,
       setQuantity,
       remove,
       reportShortages,
       fixShortages,
+      applyCode,
+      removeCode,
       startNewCart,
       reload,
       clearError,
       openDrawer,
       closeDrawer,
     }),
-    [status, cart, rememberedCount, pending, error, shortages, drawerOpen, add, setQuantity, remove, reportShortages, fixShortages, startNewCart, reload, clearError, openDrawer, closeDrawer],
+    [status, cart, rememberedCount, pending, error, allShortages, drawerOpen, add, setQuantity, remove, reportShortages, fixShortages, applyCode, removeCode, startNewCart, reload, clearError, openDrawer, closeDrawer],
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

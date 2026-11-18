@@ -155,3 +155,21 @@
     opacity: 0;
   }
 }
+
+/* Barra de progreso del carrusel del hero: su duración es la de cada diapositiva. */
+@keyframes hero-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* Con el cursor sobre un botón o link del hero, la barra se congela y con ella el cambio de diapositiva (avanza al
+   terminar la animación). Solo con mouse: en pantallas táctiles el :hover queda pegado después de un toque. */
+@media (hover: hover) {
+  .hero-carousel:has(:is(a, button):hover) .hero-progress {
+    animation-play-state: paused;
+  }
+}

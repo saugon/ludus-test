@@ -26,3 +26,24 @@ export function money(amount: string | null | undefined, currency: string | null
     return `$ ${value.toLocaleString('es-AR')}`;
   }
 }
+
+// Fechas sin hora de la API (YYYY-MM-DD): se leen en UTC para que la zona horaria no las corra un día.
+function dateParts(iso: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!match) return null;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/** «15 dic», con el año si no es el actual («15 ene 2027»); `long`: «15 de diciembre». `null` si la fecha no es válida. */
+export function shortDate(iso: string, { long = false, today = new Date() }: { long?: boolean; today?: Date } = {}): string | null {
+  const date = dateParts(iso);
+  if (!date) return null;
+  const withYear = date.getUTCFullYear() !== today.getFullYear();
+  if (long) {
+    return new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'long', year: withYear ? 'numeric' : undefined, timeZone: 'UTC' }).format(date);
+  }
+  // Intl arma «15 de dic de 2026»; en la pastilla va más corto.
+  const month = new Intl.DateTimeFormat('es-AR', { month: 'short', timeZone: 'UTC' }).format(date).replace(/\.$/, '');
+  return `${date.getUTCDate()} ${month}${withYear ? ` ${date.getUTCFullYear()}` : ''}`;
+}

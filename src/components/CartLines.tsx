@@ -4,6 +4,7 @@ import { useCart } from '../cart/CartProvider';
 import { money } from '../lib/format';
 import { useProducts } from '../lib/storefront';
 import { ErrorNotice } from './ErrorNotice';
+import { PresaleNote } from './PresaleNote';
 import { TrashIcon } from './Icons';
 import { ProductImage } from './ProductImage';
 import { QuantityStepper } from './QuantityStepper';
@@ -62,6 +63,7 @@ export function CartLines({ onNavigate, compact = false }: { onNavigate?: () => 
                     ) : (
                       <p className="font-semibold leading-snug">{name}</p>
                     )}
+                    {product?.presale && <PresaleNote availableOn={product.presale_available_on} />}
                     <p className="text-sm text-mute tabular-nums">{money(line.unit_price)} c/u</p>
                   </div>
                   <p className="shrink-0 font-semibold tabular-nums">{money(line.total)}</p>
@@ -102,7 +104,7 @@ export function CartLines({ onNavigate, compact = false }: { onNavigate?: () => 
                     </button>
                   )}
                 </div>
-                {code && !gone && line.quantity >= line.max_quantity && (
+                {code && !gone && available === undefined && line.quantity >= line.max_quantity && (
                   <p className="text-sm text-mute">Máximo disponible: {line.max_quantity}.</p>
                 )}
               </div>

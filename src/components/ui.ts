@@ -10,9 +10,9 @@ export const button = {
   secondary: `${base} min-h-12 py-2 rounded-2xl px-5 border border-line text-bone hover:border-mute hover:bg-ink-3`,
   ghost: `${base} h-11 rounded-md px-3 text-mute hover:text-bone`,
   small: `${base} h-11 rounded-md px-4 text-[0.95rem]`,
-  // La pastilla "Agregar" de las tarjetas de producto, sin mayúsculas.
+  // El «+» redondo de las tarjetas de producto.
   cardAdd:
-    'inline-flex min-h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-ember px-4 font-ui text-[0.9rem] font-bold text-ember-ink transition-colors hover:bg-ember-hi active:bg-ember-lo disabled:cursor-not-allowed disabled:opacity-50',
+    'inline-flex size-10 items-center justify-center rounded-full bg-ember text-ember-ink shadow-[0_4px_16px_rgba(245,106,45,0.35)] transition-colors hover:bg-ember-hi active:bg-ember-lo disabled:cursor-not-allowed disabled:opacity-50',
 };
 
 // Títulos de sección en Rajdhani, sin el trazo de los de Bebas Neue (los de la home y el del catálogo).
